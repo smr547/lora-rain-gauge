@@ -10,7 +10,7 @@ References to experimental repositories, significant commits, prototypes, lesson
 Experimental repositories are valuable engineering notebooks. They should not be copied wholesale into the production repository. Useful work will be classified, referenced and selectively adapted.
 
 ## Relationships
-`prior-art.md` will become the migration map for work found in LoRa experiments, qp-lab and any other relevant repositories.
+[prior-art.md](prior-art.md) will become the migration map for work found in LoRa experiments, qp-lab and any other relevant repositories.
 
 ## Status
 Awaiting the initial asset inventory.
