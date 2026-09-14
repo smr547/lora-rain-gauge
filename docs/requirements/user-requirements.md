@@ -49,14 +49,16 @@ Temporary interruption of the communications link or base-station processing sha
 ## 4. User Display
 
 ### UR-RG-010 — Browser access
-Users shall be able to view rainfall information using an ordinary web browser on their normal devices.
+Users shall be able to view rainfall information using an ordinary web browser on their normal devices, both locally or from any location with internet access
 
 ### UR-RG-011 — Today's rainfall
 The main display shall prominently show the rainfall recorded today.
 
 ### UR-RG-012 — Recent rainfall totals
 The display shall provide useful recent rainfall totals, including:
-- yesterday;
+- yesterday (local midnight to midnight);
+- last 24 hours
+- since 9am
 - the previous seven days;
 - the current month; and
 - the current year.
@@ -75,7 +77,7 @@ The display shall make it reasonably apparent whether the displayed rainfall inf
 The installed system shall normally operate unattended.
 
 ### UR-RG-021 — Outdoor operation
-Outdoor equipment shall be suitable for long-term operation in the environmental conditions experienced at the deployment site.
+Outdoor equipment shall be suitable for long-term operation in the environmental conditions experienced at the deployment site (high winds, temperature extremes).
 
 ### UR-RG-022 — Low routine maintenance
 Routine maintenance requirements, including battery replacement where applicable, shall be kept low and shall be clearly documented.
@@ -84,7 +86,7 @@ Routine maintenance requirements, including battery replacement where applicable
 A failure of the rain gauge, communications link or supporting system should be diagnosable without specialist test equipment wherever reasonably practicable.
 
 ### UR-RG-024 — System health
-The system shall retain sufficient health information to assist a maintainer in identifying failures such as a depleted battery or loss of communication.
+The system shall retain sufficient health information to assist a maintainer in identifying failures such as a depleted battery, loss of communication, false bucket trips and tipping mechanism faults.
 
 ---
 
