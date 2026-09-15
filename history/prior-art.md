@@ -20,12 +20,13 @@ Where practical, source paths and blob SHAs are recorded so that this survey rem
 
 ## Repositories surveyed
 
-The GitHub installation currently exposes eight repositories:
+The GitHub installation currently exposes nine repositories:
 
 | Repository | Relevance to LoRa Rain Gauge | Initial assessment |
 |---|---|---|
 | `smr547/lora-rain-gauge` | Production repository | Target, not prior art |
 | `smr547/qp-lab` | QP/C++, HSM, ESP32 and LilyGO/LoRa experiments | High |
+| `smr547/lora_experiments` | Working LilyGO LoRa hardware, deep sleep/wake experiments and emerging packet protocol | Very high |
 | `smr547/collab` | Rain-gauge collaboration model and generated signal artefacts | High |
 | `smr547/barking-owl-power-flow` | SignalK webapp/delta consumption and Barking Owl deployment experience | High |
 | `smr547/signalk-modbus-plugin` | SignalK server plugin and delta production | High |
@@ -78,7 +79,93 @@ The document is broader than the rain-gauge product and should remain in `qp-lab
 
 ---
 
-## 2. `collab`
+## 2. `lora_experiments`
+
+### Initial architecture and packet philosophy
+
+**Source:** `smr547/lora_experiments`  
+**Path:** `2026-06-13-lora-experiments-initial-notes.md`  
+**Observed blob SHA:** `86e0956943e1504b86f400b1f95998116d44e6e4`  
+**Disposition:** **ADAPT — HIGH VALUE**
+
+This repository is direct rain-gauge prior art and should have been included in the first survey. The initial notes already establish several important product ideas: private LoRa rather than BLE/LoRaWAN, one gateway serving many sensor nodes, and—most importantly—transmitting **absolute counts rather than individual tip events** so that lost packets or gateway outages need not lose accumulated rainfall.
+
+That packet philosophy should be reviewed explicitly against the Version 1 requirements and is a strong candidate for a product ADR.
+
+### LilyGO T3 V1.6.1 / SX1276 hardware bring-up
+
+**Source:** `smr547/lora_experiments`  
+**Paths:** `e1/roaming/src/main.cpp`, `e1/base/src/main.cpp`, corresponding `platformio.ini` files  
+**Observed blob SHAs:** `b1729179c72a0ab6766d593ad3b3727b9f1f1bdf`, `300e3ce88a685688be8d1a24e964f1f88c5439c9`, `e0184e4f3fbd9525ecb218168f6412519d62eea3`, `25e336813975e924efbc89f10c992a7981102cdf`  
+**Disposition:** **REUSE / ADAPT — HIGH VALUE**
+
+The experiment contains concrete, working hardware knowledge rather than merely a prospective LoRa target:
+
+- LilyGO T3 V1.6.1 / SX1276 SPI and DIO pin mapping;
+- RadioLib/PlatformIO configuration;
+- 915 MHz operation with 125 kHz bandwidth, SF7 and coding rate 4/5;
+- transmitter and continuously receiving base-station examples;
+- RSSI and SNR reporting at the receiver;
+- application-level packet validation.
+
+The production project should preserve the proven hardware mapping and radio bring-up while moving tunable radio parameters into an explicit configuration/protocol definition.
+
+### Deep sleep, timer wake and bucket-tip wake
+
+**Source:** `smr547/lora_experiments`  
+**Path:** `e1/roaming/src/main.cpp`  
+**Disposition:** **ADAPT — HIGH VALUE**
+
+The roaming-node experiment demonstrates the core low-power mechanism needed by the rain gauge:
+
+- ESP32 deep sleep after each wake cycle;
+- timer wake for periodic heartbeat/endurance operation;
+- EXT0 wake from an active-low tipping-bucket contact on RTC-capable GPIO13;
+- RTC pull-up configuration while the digital GPIO domain is powered down;
+- protection against immediate repeated wake when the level-sensitive bucket contact remains closed;
+- radio sleep before ESP32 deep sleep;
+- RTC-retained sequence and wake counters; and
+- wake-reason classification.
+
+This is close to the required Version 1 node behaviour, but production integration must reconcile the raw wake/contact handling with the QP/HSM debounce and fault-detection work identified in `qp-lab` and `collab`.
+
+### Battery and supply monitoring
+
+**Source:** `smr547/lora_experiments`  
+**Path:** `e1/roaming/src/main.cpp`  
+**Disposition:** **ADAPT**
+
+The experiment samples both the regulated supply and LiPo terminal voltage using calibrated `analogReadMilliVolts()`, averaging and divider compensation. This is useful for node-health telemetry.
+
+The associated design conversation also identified that a permanent 100k/100k battery divider itself consumes material standby current. The production low-power design should therefore measure actual board-level sleep current and revisit the divider/power architecture rather than copying the prototype unchanged.
+
+### Emerging telemetry protocol — Version 2 experiment
+
+**Source:** `smr547/lora_experiments`  
+**Paths:** `e1/roaming/src/main.cpp`, `e1/base/src/main.cpp`  
+**Disposition:** **ADAPT — PROTOCOL INPUT**
+
+The transmitter and receiver share a packed binary `TelemetryPacket` containing:
+
+- magic byte;
+- protocol version;
+- node ID;
+- message type;
+- sequence number;
+- wake-cycle uptime;
+- temperature field (currently synthetic);
+- supply voltage;
+- battery voltage;
+- wake reason; and
+- CRC-16/CCITT.
+
+The base rejects bad magic, incompatible protocol versions and application-CRC failures, and records RSSI/SNR separately as receiver observations. The transmitter increments its retained sequence only after a successful RadioLib transmission.
+
+This is an **experimental protocol, not yet the Version 1 product protocol**. In particular, the current packet does not yet carry the absolute rain-tip count advocated by the initial design notes. The production protocol should retain the useful framing/versioning/node-identification/error-detection ideas while being specified independently under `protocol/`.
+
+---
+
+## 3. `collab`
 
 ### Rain Gauge AO collaboration model
 
@@ -118,7 +205,7 @@ This ADR arose from a richer rain-gauge model in which `BUCKET_SWITCH_CLOSING` c
 
 ---
 
-## 3. `signalk-modbus-plugin`
+## 4. `signalk-modbus-plugin`
 
 ### Server-side SignalK delta production
 
@@ -138,7 +225,7 @@ Other useful practices include provider status/error reporting and whole-plugin 
 
 ---
 
-## 4. `barking-owl-power-flow`
+## 5. `barking-owl-power-flow`
 
 ### SignalK webapp and delta consumer
 
@@ -159,7 +246,7 @@ The power-flow visualisation itself is application-specific and should not be co
 
 ---
 
-## 5. `sdm230-signalk`
+## 6. `sdm230-signalk`
 
 ### Authenticated external SignalK publisher and automatic device provisioning
 
@@ -189,7 +276,7 @@ The architecture is already usefully factored: `signalk_access.py` owns provisio
 
 ---
 
-## 6. `solar_monitor`
+## 7. `solar_monitor`
 
 ### SensESP SignalK output
 
@@ -212,11 +299,12 @@ The survey already reveals several strong seams:
 
 1. **Sensor behaviour:** `qp-lab` contains valuable QP/HSM and physical-observation design experience.
 2. **Collaboration semantics:** `collab` contains a rain-gauge-specific AO vocabulary that should be reviewed rather than blindly adopted.
-3. **LoRa-capable platform:** `qp-lab` has a LilyGO T3 build target, but this survey has not yet found a complete rain-gauge LoRa TX/RX implementation.
-4. **SignalK producer:** `signalk-modbus-plugin` demonstrates native server-side delta injection.
-5. **SignalK consumer/dashboard:** `barking-owl-power-flow` demonstrates a deployable SignalK webapp and live delta consumption.
-6. **Embedded SignalK precedent:** `solar_monitor` demonstrates SensESP publication, but also reminds us to keep credentials out of source.
-7. **Authentication:** `sdm230-signalk` contains the remembered EV-monitoring solution: automatic SignalK device access provisioning, persistent credentials and authenticated WebSocket publication. This is high-value prior art for the base station.
+3. **LoRa hardware and low power:** `lora_experiments` contains working LilyGO/SX1276 TX/RX code, timer and bucket-contact wake, deep sleep, radio sleep, battery/supply monitoring and link-quality observations.
+4. **Protocol:** `lora_experiments` contains a useful Version 2 experimental binary telemetry frame, while its earlier design notes establish the stronger rain-gauge principle of transmitting absolute tip counts rather than fragile tip events.
+5. **SignalK producer:** `signalk-modbus-plugin` demonstrates native server-side delta injection.
+6. **SignalK consumer/dashboard:** `barking-owl-power-flow` demonstrates a deployable SignalK webapp and live delta consumption.
+7. **Embedded SignalK precedent:** `solar_monitor` demonstrates SensESP publication, but also reminds us to keep credentials out of source.
+8. **Authentication:** `sdm230-signalk` contains the remembered EV-monitoring solution: automatic SignalK device access provisioning, persistent credentials and authenticated WebSocket publication. This is high-value prior art for the base station.
 
 These findings reinforce the proposed architecture boundary: **LoRa messages should describe sensor observations, not SignalK deltas.** SignalK translation belongs on the base-station/server side.
 
@@ -226,7 +314,9 @@ Before migration decisions are finalised:
 
 - compare the external authenticated-publisher pattern in `sdm230-signalk` with the in-process plugin pattern in `signalk-modbus-plugin` and capture the Version 1 choice as an architectural decision;
 - inspect repository history/branches where default-branch search is insufficient;
-- locate any complete LoRa TX/RX experiments and radio configuration/range-test evidence;
+- turn the `lora_experiments` hardware/radio findings into an explicit Version 1 node hardware baseline and identify any remaining range-test evidence;
+- reconcile its deep-sleep/bucket-wake mechanism with the QP/HSM debounce and fault model;
+- specify the Version 1 LoRa message protocol under `protocol/`, explicitly deciding how absolute tip count, sequence number, node identity, health telemetry and protocol versioning interact;
 - inspect the fuller historical rain-gauge collaboration model, if retained in repository history;
 - identify actual hardware used in experiments (LilyGO variant, LoRa chipset, tipping-bucket hardware and pin assignments);
 - identify executable BucketSensor/QP examples beyond the design working paper;
