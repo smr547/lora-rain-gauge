@@ -20,7 +20,7 @@ Where practical, source paths and blob SHAs are recorded so that this survey rem
 
 ## Repositories surveyed
 
-The GitHub installation currently exposes seven repositories:
+The GitHub installation currently exposes eight repositories:
 
 | Repository | Relevance to LoRa Rain Gauge | Initial assessment |
 |---|---|---|
@@ -29,6 +29,7 @@ The GitHub installation currently exposes seven repositories:
 | `smr547/collab` | Rain-gauge collaboration model and generated signal artefacts | High |
 | `smr547/barking-owl-power-flow` | SignalK webapp/delta consumption and Barking Owl deployment experience | High |
 | `smr547/signalk-modbus-plugin` | SignalK server plugin and delta production | High |
+| `smr547/sdm230-signalk` | Authenticated external SignalK publication, automatic device access provisioning and EV-meter deployment | High |
 | `smr547/solar_monitor` | ESP32/SensESP to SignalK example | Medium |
 | `smr547/family-history` | No expected product relevance | None; not surveyed further |
 
@@ -156,17 +157,39 @@ This repository provides useful production-adjacent experience for the rain dash
 
 The power-flow visualisation itself is application-specific and should not be copied as the rainfall UI.
 
-### SignalK authentication / recent EV monitoring work
+---
 
-**Disposition:** **INVESTIGATE**
+## 5. `sdm230-signalk`
 
-The User specifically identified recent EV monitoring work as having solved SignalK authentication in a way likely to suit the LoRa base station. The first default-branch code search did **not** locate an obvious authentication implementation in this repository.
+### Authenticated external SignalK publisher and automatic device provisioning
 
-Possible explanations include a different path, branch, recent commit, or another of the selected repositories. This is a high-priority follow-up item because it may determine whether the base station should publish as an authenticated external client or use an in-process SignalK plugin boundary.
+**Source:** `smr547/sdm230-signalk`  
+**Paths:** `README.md`, `src/signalk_access.py`, `src/signalk_ws.py`, `src/publisher.py`, `systemd/sdm230-signalk.default`  
+**Observed blob SHAs:** `553f71323d0090fd25e1837de630bf44a0032f2f`, `e570badc89353a5a8ada69535dbe8dc79076016d`, `a3b25a9af6be552d34848913f43c672cf4fa8913`, `65bb47f4650902534ba5abbf4b9c02c48052a5b3`, `fa9e72c1fb2c47d9e10fffffd53af571eb082ec7`  
+**Disposition:** **ADAPT — HIGH VALUE**
+
+This is the previously remembered EV-monitoring SignalK authentication work. It provides a well-separated implementation of the commissioning and authenticated-publication problem that the LoRa base station is likely to face.
+
+Useful assets include:
+
+- persistent per-installation client UUID creation;
+- SignalK device access request submission and approval polling;
+- persistent approved-token storage with restrictive local permissions (`0700` directory and `0600` files);
+- authenticated WebSocket connection using `Authorization: Bearer <token>`;
+- validation of the SignalK `hello` message and use of server `self` as the default context;
+- metadata publication after connection/reconnection;
+- reconnect behaviour; and
+- systemd deployment/configuration practices that keep credentials out of the repository.
+
+The architecture is already usefully factored: `signalk_access.py` owns provisioning and credential storage, while `signalk_ws.py` owns authenticated WebSocket transport. Neither is intrinsically coupled to an SDM230 meter.
+
+**Migration note:** adapt/generalise these components for the base station rather than reimplementing SignalK authentication. Product-specific names, configuration paths and descriptions should change, while retaining the commissioning principle: first run requests access, an administrator approves it in SignalK, and subsequent operation uses securely stored credentials.
+
+**Architectural consequence:** this gives Version 1 a credible external-publisher option alongside the in-process plugin approach demonstrated by `signalk-modbus-plugin`. The choice should be explicit rather than driven by authentication difficulty.
 
 ---
 
-## 5. `solar_monitor`
+## 6. `solar_monitor`
 
 ### SensESP SignalK output
 
@@ -193,7 +216,7 @@ The survey already reveals several strong seams:
 4. **SignalK producer:** `signalk-modbus-plugin` demonstrates native server-side delta injection.
 5. **SignalK consumer/dashboard:** `barking-owl-power-flow` demonstrates a deployable SignalK webapp and live delta consumption.
 6. **Embedded SignalK precedent:** `solar_monitor` demonstrates SensESP publication, but also reminds us to keep credentials out of source.
-7. **Authentication:** the specifically remembered recent authenticated EV-monitoring implementation remains to be located.
+7. **Authentication:** `sdm230-signalk` contains the remembered EV-monitoring solution: automatic SignalK device access provisioning, persistent credentials and authenticated WebSocket publication. This is high-value prior art for the base station.
 
 These findings reinforce the proposed architecture boundary: **LoRa messages should describe sensor observations, not SignalK deltas.** SignalK translation belongs on the base-station/server side.
 
@@ -201,7 +224,7 @@ These findings reinforce the proposed architecture boundary: **LoRa messages sho
 
 Before migration decisions are finalised:
 
-- locate the remembered recent SignalK authentication solution;
+- compare the external authenticated-publisher pattern in `sdm230-signalk` with the in-process plugin pattern in `signalk-modbus-plugin` and capture the Version 1 choice as an architectural decision;
 - inspect repository history/branches where default-branch search is insufficient;
 - locate any complete LoRa TX/RX experiments and radio configuration/range-test evidence;
 - inspect the fuller historical rain-gauge collaboration model, if retained in repository history;
