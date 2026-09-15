@@ -163,6 +163,17 @@ The base rejects bad magic, incompatible protocol versions and application-CRC f
 
 This is an **experimental protocol, not yet the Version 1 product protocol**. In particular, the current packet does not yet carry the absolute rain-tip count advocated by the initial design notes. The production protocol should retain the useful framing/versioning/node-identification/error-detection ideas while being specified independently under `protocol/`.
 
+### Solar/LiPo LoRa node prototype and endurance test
+
+**Source:** physical prototype and User recollection; associated firmware in `smr547/lora_experiments/e1/roaming`  
+**Disposition:** **REFERENCE / INVESTIGATE — HIGH VALUE**
+
+A physical prototype was built around a LilyGO LoRa board with a LiPo battery, solar panel and charging circuit. The roaming-node software was exercised with a deliberately aggressive **15-second timer wake/transmit interval**. The prototype reportedly operated for approximately **two weeks without solar charging**.
+
+This is useful empirical evidence that the basic sleep/wake/radio approach is viable, but it is not yet a production battery-life measurement. Battery capacity, actual sleep/transmit current, charging circuit, panel specification, environmental conditions and detailed energy accounting were not captured in the repository.
+
+**Follow-up:** recover the physical prototype, identify its exact components and wiring, and create a circuit diagram under the production project's hardware documentation. Measure board-level sleep and transmit current before making Version 1 endurance claims. Preserve the prototype as evidence until its construction has been documented.
+
 ---
 
 ## 3. `collab`
@@ -293,6 +304,29 @@ For Version 1, the LoRa sensor node should remain independent of SignalK semanti
 
 ---
 
+
+## Davis tipping-bucket bench characterisation
+
+### Reed-switch timing and bounce measurements
+
+**Source:** *Davis Rain Gauge bucket tip characteristics* bench-test report  
+**Disposition:** **REFERENCE / REUSE AS MEASURED DESIGN EVIDENCE — HIGH VALUE**
+
+The earlier bench test characterises the physical sensor rather than assuming generic switch behaviour. The Davis tipping bucket uses a normally-open magnetically operated reed switch, and the tested gauge represents each bucket tip as **0.2 mm of rainfall**.
+
+The test circuit used an ESP32 GPIO input with a **10 kΩ pull-up to 3.3 V** and **100 nF to ground** in parallel with the reed switch. Oscilloscope measurements found:
+
+- a low-going bucket-switch closure lasting approximately **160–163 ms**;
+- several contact bounces on initial closure, settling after approximately **35 µs**;
+- ESP32 interrupt recognition approximately **16.5 µs** after initial closure in the test program;
+- no observed bounce on switch reopening; and
+- recovery of the filtered GPIO input to 3.3 V approximately **5.1 ms** after reopening.
+
+These measurements are direct input to the Version 1 bucket-sensor state machine. In particular, the physical bucket dwell time is orders of magnitude longer than the measured initial contact bounce. The production debounce/fault logic should therefore be derived from the observed mechanism and reconciled with the BucketSensor HSM work in `qp-lab` and `collab`, rather than adopting an arbitrary generic debounce delay.
+
+**Follow-up:** preserve the original report and oscilloscope captures as primary engineering evidence in the production repository, subject to deciding the appropriate location for test evidence. Use the measurements when specifying and verifying the Version 1 bucket-input state machine.
+
+---
 ## Initial findings
 
 The survey already reveals several strong seams:
@@ -304,7 +338,9 @@ The survey already reveals several strong seams:
 5. **SignalK producer:** `signalk-modbus-plugin` demonstrates native server-side delta injection.
 6. **SignalK consumer/dashboard:** `barking-owl-power-flow` demonstrates a deployable SignalK webapp and live delta consumption.
 7. **Embedded SignalK precedent:** `solar_monitor` demonstrates SensESP publication, but also reminds us to keep credentials out of source.
-8. **Authentication:** `sdm230-signalk` contains the remembered EV-monitoring solution: automatic SignalK device access provisioning, persistent credentials and authenticated WebSocket publication. This is high-value prior art for the base station.
+8. **Physical sensor evidence:** the Davis tipping-bucket bench test gives measured closure, bounce and recovery timing that should drive the production BucketSensor behaviour rather than an arbitrary debounce constant.
+9. **Prototype endurance:** a LilyGO/LiPo/solar prototype ran for about two weeks at a deliberately aggressive 15-second wake/transmit cadence without solar contribution; its circuit and energy measurements remain to be reconstructed.
+10. **Authentication:** `sdm230-signalk` contains the remembered EV-monitoring solution: automatic SignalK device access provisioning, persistent credentials and authenticated WebSocket publication. This is high-value prior art for the base station.
 
 These findings reinforce the proposed architecture boundary: **LoRa messages should describe sensor observations, not SignalK deltas.** SignalK translation belongs on the base-station/server side.
 
@@ -315,7 +351,8 @@ Before migration decisions are finalised:
 - compare the external authenticated-publisher pattern in `sdm230-signalk` with the in-process plugin pattern in `signalk-modbus-plugin` and capture the Version 1 choice as an architectural decision;
 - inspect repository history/branches where default-branch search is insufficient;
 - turn the `lora_experiments` hardware/radio findings into an explicit Version 1 node hardware baseline and identify any remaining range-test evidence;
-- reconcile its deep-sleep/bucket-wake mechanism with the QP/HSM debounce and fault model;
+- reconcile its deep-sleep/bucket-wake mechanism with the QP/HSM debounce and fault model, using the measured Davis reed-switch timing as design evidence;
+- recover and document the LilyGO/LiPo/solar prototype circuit, component identities and measured sleep/transmit currents;
 - specify the Version 1 LoRa message protocol under `protocol/`, explicitly deciding how absolute tip count, sequence number, node identity, health telemetry and protocol versioning interact;
 - inspect the fuller historical rain-gauge collaboration model, if retained in repository history;
 - identify actual hardware used in experiments (LilyGO variant, LoRa chipset, tipping-bucket hardware and pin assignments);
