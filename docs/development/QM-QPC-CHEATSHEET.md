@@ -91,6 +91,82 @@ Do not start by inventing classes and source files. Start by asking:
 
 ------------------------------------------------------------------------
 
+
+
+## Known-good implementation baseline
+
+For the rain-gauge application, use `smr547/qp-lab/blinky-button` as the
+known-good implementation baseline for the ESP32/QP/C++ toolchain.
+
+The roles of the two principal references are different:
+
+``` text
+Dining Philosophers
+    -> reference for QP patterns and framework idioms
+
+qp-lab/blinky-button
+    -> known-good ESP32/QP/C++/QM/PlatformIO implementation pattern
+
+lora-rain-gauge
+    -> application-specific architecture and behaviour
+```
+
+The baseline currently records:
+
+``` text
+PlatformIO platform: espressif32@^6.6.0
+Framework:           Arduino-ESP32
+QP port:             vChavezB/qpcpp_esp32 / QPESP32 0.2.1
+QP/C++ basis:        7.2.2
+QM:                  5.2.5
+Tracing:             Q_SPY enabled
+QP core affinity:    QP_CPU_NUM=1
+```
+
+Do not casually change these versions or build assumptions during initial
+bring-up. First reproduce the known-good arrangement, then make deviations
+explicit and test them independently.
+
+### Lessons captured in `platformio.ini`
+
+The `blinky-button/platformio.ini` file is part of the engineering baseline,
+not disposable boilerplate. In particular it demonstrates:
+
+``` ini
+platform = espressif32@^6.6.0
+framework = arduino
+```
+
+This means that the application is built with PlatformIO while still using the
+Arduino-ESP32 framework underneath.
+
+QP integration settings include:
+
+``` ini
+-D QP_CPU_NUM=1
+-D CONFIG_QP_IDLE_YIELD
+-D Q_SPY
+-D CORE_DEBUG_LEVEL=0
+-Isrc/generated
+-Isrc
+```
+
+and the source filter separates handwritten and QM-generated code:
+
+``` ini
+build_src_filter =
+    +<src/*.cpp>
+    +<src/generated/*.cpp>
+```
+
+The baseline also contains both a generic ESP32 environment and a LilyGO
+environment, demonstrating that the same QP application infrastructure has
+already been exercised on the LilyGO family.
+
+Machine-specific upload/monitor device names and debugger settings should be
+reviewed rather than copied blindly.
+
+
 ## 1. Map the collaboration into the QM application
 
 For the rain-gauge application, the QM model will initially contain the
@@ -539,10 +615,21 @@ state.
 The startup sequence is easy to underestimate because the QP examples
 compress a lot of framework setup into a small amount of code.
 
+For this project, follow the proven `qp-lab/blinky-button/src/main.cpp`
+PlatformIO/Arduino pattern. The source file is still named `main.cpp`, but the
+Arduino framework provides the process entry point and the application defines
+`setup()` and `loop()`.
+
+An important port-specific lesson from the baseline is that, with the
+`vChavezB/qpcpp_esp32` port currently in use, `QF::run()` returns after it
+creates the AO FreeRTOS tasks and performs their initial transitions. Therefore
+`loop()` must continue to yield to the FreeRTOS scheduler; do not assume that
+`QF::run()` never returns.
+
 Use an explicit checklist:
 
 ``` text
-main()
+setup()
  |
  ├── BSP initialization
  ├── QF initialization
@@ -554,7 +641,12 @@ main()
  ├── establish subscriptions
  ├── establish QSPY dictionaries
  ├── enable/establish hardware event sources
- └── QF run
+ ├── create/start QP tick task
+ └── QF::run()
+
+loop()
+ |
+ └── yield to FreeRTOS scheduler
 ```
 
 ### For each AO start
@@ -773,12 +865,21 @@ Recommended repository location:
 rain-gauge-node/
 ├── model/
 │   ├── README.md
-│   ├── QM-QPC-CHEATSHEET.md
-│   └── BucketAO.qm
+│   └── <application>.qm
 ├── src/
+│   ├── main.cpp
+│   ├── bsp.cpp
+│   └── generated/
 ├── include/
 └── test/
+
+docs/
+└── development/
+    └── QM-QPC-CHEATSHEET.md
 ```
+
+Keep handwritten platform/application glue in `src/*.cpp` and QM-generated
+sources in `src/generated/`, following the proven `blinky-button` pattern.
 
 The exact generated-source layout can be decided after the QM generation
 pattern has settled.
