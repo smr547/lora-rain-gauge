@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -e
+
+QM="${QM:-$HOME/qm525/bin/qm.sh}"
+
+if [[ ! -x "$QM" ]]; then
+    echo "QM executable not found: $QM" >&2
+    echo "Set QM to the path of your QM 5.2.5 qm.sh" >&2
+    exit 1
+fi
+
+exec "$QM" "$@"

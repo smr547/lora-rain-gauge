@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model version="5.2.5" links="0">
+ <framework name="qpcpp"/>
+ <package name="AOs" stereotype="0x02">
+  <class name="TippingBucket" superclass="qpcpp::QActive">
+   <attribute name="instance" type="TippingBucket" visibility="0x00" properties="0x01"/>
+   <attribute name="m_checkTimer" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
+   <attribute name="m_faultTimer" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
+   <operation name="TippingBucket" type="" visibility="0x00" properties="0x00">
+    <documentation>TippingBucket constructor</documentation>
+    <code>: QActive(Q_STATE_CAST(&amp;TippingBucket::initial)),
+  m_checkTimer(this, TIMEOUT_SIG, 0U),
+  m_faultTimer(this, FAULT_TIMEOUT_SIG, 0U)</code>
+   </operation>
+   <statechart properties="0x00">
+    <initial target="../1">
+     <initial_glyph conn="70,3,5,0,18,3">
+      <action box="0,-2,10,2"/>
+     </initial_glyph>
+    </initial>
+    <state name="Ready">
+     <entry brief="// Post TIPPING_BUCKET_IDLE to ControlAO"/>
+     <exit brief="// Post TIPPING_BUCKET_BUSY to ControlAO"/>
+     <tran trig="BUCKET_SWITCH_CLOSING" target="../../2">
+      <tran_glyph conn="83,12,2,0,3,-11,4">
+       <action box="-23,1,25,5"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="80,6,20,6">
+      <entry box="1,2,6,2"/>
+      <exit box="1,4,6,2"/>
+     </state_glyph>
+    </state>
+    <state name="Debouncing">
+     <tran trig="TIMEOUT" target="../../3">
+      <tran_glyph conn="69,25,2,3,7,10">
+       <action box="1,4,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="66,19,13,6"/>
+    </state>
+    <state name="ConfirmingClosed">
+     <tran trig="BUCKET_SWITCH_OPEN" target="../../1">
+      <tran_glyph conn="98,28,0,2,-14,-4,-2">
+       <action box="1,-8,19,3"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="BUCKET_SWITCH_CLOSED" target="../../4">
+      <tran_glyph conn="90,34,2,0,4,-16,2">
+       <action box="1,2,24,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="79,28,27,6"/>
+    </state>
+    <state name="WaitForOpen">
+     <tran trig="BUCKET_SWITCH_OPEN" target="../../6">
+      <tran_glyph conn="88,43,1,0,25,6">
+       <action box="9,-3,19,3"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="FAULT_TIMEOUT" target="../../5">
+      <tran_glyph conn="60,43,3,0,-12,9">
+       <action box="-15,-3,15,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="BUCKET_SWITCH_CLOSED" target="..">
+      <tran_glyph conn="74,49,2,2,12,9,-12">
+       <action box="-1,15,20,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="60,40,28,9"/>
+    </state>
+    <state name="BucketFault">
+     <tran trig="CONTINUE" target="../../1">
+      <tran_glyph conn="37,56,3,3,-11,-47,54">
+       <action box="7,-46,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="37,52,28,6"/>
+    </state>
+    <state name="ConfirmedTipped">
+     <tran trig="CONTINUE" target="../../1">
+      <tran_glyph conn="126,52,1,1,12,-43,-38">
+       <action box="-6,-42,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="97,49,29,6"/>
+    </state>
+    <state_diagram size="179,100"/>
+   </statechart>
+  </class>
+  <attribute name="AO_TippingBucket" type="QP::QActive * const" visibility="0x00" properties="0x00">
+   <code>= &amp;TippingBucket::instance;</code>
+  </attribute>
+  <class name="Control" superclass="qpcpp::QActive">
+   <attribute name="instance" type="Control" visibility="0x00" properties="0x01"/>
+   <attribute name="m_busyMask" type="std::uint8_t" visibility="0x02" properties="0x00">
+    <documentation>bit:         7 6 5 4 3 2 1 0
+             0 0 0 0 0 0 R T
+                         │ │
+                         │ └─ TippingBucketAO busy
+                         └─── RadioAO busy</documentation>
+   </attribute>
+   <operation name="Control" type="" visibility="0x00" properties="0x01">
+    <documentation>Control constructor</documentation>
+    <code>: QActive(Q_STATE_CAST(&amp;Control::initial))</code>
+   </operation>
+   <statechart properties="0x00">
+    <initial target="../1">
+     <action brief="initial">m_busyMask = 0U;</action>
+     <initial_glyph conn="70,3,5,0,3,6">
+      <action box="0,-2,10,2"/>
+     </initial_glyph>
+    </initial>
+    <state name="Running">
+     <tran trig="TIPPING_BUCKET_IDLE">
+      <action>M_busyMask &amp;= ~TIPPING_BUCKET_BUSY;</action>
+      <tran_glyph conn="55,18,3,-1,28">
+       <action box="0,-2,20,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="TIPPING_BUCKET_BUSY">
+      <action>m_busyMask |= TIPPING_BUCKET_BUSY;</action>
+      <tran_glyph conn="55,22,3,-1,28,-1">
+       <action box="0,-2,21,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="55,9,34,23"/>
+    </state>
+    <state_diagram size="147,88"/>
+   </statechart>
+  </class>
+  <attribute name="AO_Control" type="QP::QActive * const" visibility="0x00" properties="0x00">
+   <code>= &amp;Control::instance;</code>
+  </attribute>
+ </package>
+ <directory name=".">
+  <directory name="generated">
+   <file name="bsp.hpp">
+    <text>#define BSP_HPP
+
+#include &lt;Arduino.h&gt;
+#include &quot;qpcpp.hpp&quot;
+
+
+static constexpr uint8_t BUCKET_PIN = 25;
+
+// a very simple Board Support Package (BSP) -------------------------------
+class BSP {
+public:
+    enum { TICKS_PER_SEC = 100 }; // numer of clock ticks in a second
+    static void init(void);
+    static void terminate(int16_t);
+    static void start(void);
+};
+
+enum RainGaugeSignals {
+    TIMEOUT_SIG = QP::Q_USER_SIG, // offset the first signal
+    BUCKET_SWITCH_CLOSING_SIG, //  sent by button ISR to AO_Button for debounce
+    BUCKET_SWITCH_OPEN_SIG,
+    BUCKET_SWITCH_CLOSED_SIG,
+    FAULT_TIMEOUT_SIG,
+    CONTINUE_SIG,
+    TIPPING_BUCKET_IDLE_SIG,
+    TIPPING_BUCKET_BUSY_SIG,
+    MAX_SIG
+};
+
+#ifdef Q_SPY
+enum UserQSRecords {
+    QS_USER_BUTTON = QP::QS_USER,
+   // QS_BUTTON_BOUNCE,
+    QS_BOOT,
+    QS_ASSERT,
+    QS_ERROR,
+    QS_DIAGNOSTIC
+};
+#endif
+
+// active object(s) used in this application -------------------------------
+$declare${AOs::AO_TippingBucket}
+#endif // BSP_HPP</text>
+   </file>
+   <file name="tippingBucket.cpp">
+    <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
+#include &quot;bsp.hpp&quot;   // Board Support Package interface
+
+// reusable event instances associated with the tipping bucket
+static QP::QEvt const continueEvt{CONTINUE_SIG, 0U, 0U};
+static QP::QEvt const timeoutEvt{TIMEOUT_SIG, 0U, 0U};
+static QP::QEvt const switchClosingEvt{BUCKET_SWITCH_CLOSING_SIG, 0U, 0U};
+static QP::QEvt const switchOpenEvt{BUCKET_SWITCH_OPEN_SIG, 0U, 0U};
+static QP::QEvt const switchClosedEvt{BUCKET_SWITCH_CLOSED_SIG, 0U, 0U};
+static QP::QEvt const faultTimeoutEvt{FAULT_TIMEOUT_SIG, 0U, 0U};
+
+using namespace QP;
+
+// ask QM to declare the Button class ----------------------------------------
+$declare${AOs::TippingBucket}
+
+// opaque pointer to the Button active object --------------------------------
+$define${AOs::AO_TippingBucket}
+
+// ask QM to define the Button class (including the state machine) -----------
+$define${AOs::TippingBucket}</text>
+   </file>
+   <file name="control.cpp">
+    <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
+#include &quot;bsp.hpp&quot;   // Board Support Package interface
+
+
+
+// reusable event instances associated with  the Control AO
+
+static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
+static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
+
+using namespace QP;
+
+// ask QM to declare the Control  class ----------------------------------------
+$declare${AOs::Control}
+
+// opaque pointer to the Control active object --------------------------------
+$define${AOs::AO_Control}
+
+
+// busyFlag manipulation
+
+static constexpr std::uint8_t TIPPING_BUCKET_BUSY = 1U &lt;&lt; 0;
+static constexpr std::uint8_t RADIO_BUSY          = 1U &lt;&lt; 1;
+
+// ask QM to define the Control class (including the state machine) -----------
+$define${AOs::Control}</text>
+   </file>
+  </directory>
+ </directory>
+</model>

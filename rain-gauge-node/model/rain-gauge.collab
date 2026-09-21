@@ -1,0 +1,51 @@
+collab 1
+title "Rain Gauge — AO Collaboration"
+
+# Active Objects
+ao BucketReedSwitchISR
+ao BucketSensorAO
+ao RadioAO
+ao ControlAO
+
+# BucketReedSwitchISR is triggered by the falling edge of the rain gauge reed switch
+# (this GPIO signal is normally high as a result of a 10kOhm pullup resister and 100nF filtering capacitor)
+# This event is signals the start of a possible rain gauge bucket tip event
+
+collaboration BucketReedSwitchISR BucketSensorAO
+  BucketReedSwitchISR -> BucketSensorAO
+    BUCKET_SWITCH_CLOSING
+end
+
+# The BucketSensorAO primary purpose is to identify bone-fide tips of the rain gauge bucket, rejecting any false
+# signals that may be induced by RF interference, swith bounce or other noise sources. Once a genuine bucket tip 
+# has been identified the event is signalled to the ControlAO
+# As a secondary function, the BucketSensorAO must inform the ControlAO when it is busy processing a potential bucket tip. 
+# This will prevent the ControlAO from putting the processor to sleep in the middle of a tipping event.
+# Finally the BucketSensorAO can report error conditions to the ControlAO by sending a RAIN_BUCKET_FAULT signal (for example
+# if the bucket fails to reset after a tip)
+
+collaboration BucketSensorAO ControlAO
+  BucketSensorAO -> ControlAO
+    BUCKET_TIPPED
+    BUCKET_SENSOR_BUSY
+    BUCKET_SENSOR_IDLE
+    RAIN_BUCKET_FAULT
+  
+  ControlAO -> BucketSensorAO 
+    BUCKET_SWITCH_CLOSING    # if ControlAO finds that the processor has been woken by a reed switch closure
+                             # it is obliged to tell the BucketSensorAO so it can complete signal processing on the reed switch
+end
+
+# The RadioAO is responsible for sending data packets to the base station via LoRa packet radio as requested by 
+# the ControlAO. As with all critical active objects the RadioAO must inform the ControlAO of its busy status
+# to ensure that the processor is not put to sleep prematurely.
+
+collaboration ControlAO RadioAO
+  ControlAO -> RadioAO
+    SEND_REPORT   # ControlAO directs the sending of a report via radio
+
+  RadioAO -> ControlAO
+    RADIO_BUSY
+    RADIO_IDLE
+end
+

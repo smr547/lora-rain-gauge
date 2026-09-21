@@ -1,0 +1,72 @@
+@startuml
+' BucketSensorAO HSM
+' ------------------
+'
+' The BucketSensorAO is reponsible for monitoring Rain Gauge bucket reed switch and determining when a "tip event"
+' has occured as a result of rainfall. The BucketSensorAO sends a BUCKET_TIPPED event to the ControlAO for each bucket tip.
+' 
+' Bucket tip processing is activated by the reception of a BUCKET_SWITCH_CLOSING event generated either by
+'   -- a falling edge on the reed switch GPIO detected via ISR
+'   -- the processor being woken from deep sleep via a falling edge on the reed switch GPIO
+'
+' Refer to the System Collaboration Diagram for more information
+'
+' HSM design
+' ----------
+'
+' The following HSM is responsible for tracking the progress of a bucket tip signal. It is designed to reject noise on the sensor
+' circuit and also to detect a fault with the button tipping mechanism. The HSM continually reports the status of the BucketSensorAO
+' (BUSY or IDLE) to the ControlAO. 
+'
+' In the event of a bucket tip being initiated the AO will immediately declare itself as BUSY. It will only declare itself as IDLE 
+' after the tipping event (genuine or false) has been fully processed and the tipping bucket has settled in its normal position. A tipping
+' bucket that remains open for more that 500ms is regarded as a FAULT condition and it is up to the ControlAO to decide how to
+' manage the fault.
+'
+' Resources
+' ---------
+' Timer1 sends TIMEOUT to self : A short period timer used to schedule pin sensing activity
+' Timer2:  sends FAULT_TIMEOUT to self A long period timer used to identify fault condition(s)
+'
+ 
+' Initial transition
+[*] --> READY          
+
+' initial state
+state READY            
+READY : entry / post BUCKET_SENSOR_IDLE to ControlAO 
+READY : exit / post BUCKET_SENSOR_BUSY to ControlAO
+READY --> DEBOUNCING : BUCKET_SWITCH_CLOSING
+
+' the reed switch is know to bounce after initial closure, bounces are ignored in this state for a period of 5ms
+state DEBOUNCING       
+DEBOUNCING: entry / armTimer(5ms, oneshot)
+DEBOUNCING --> CONFIRMING_CLOSE : TIMEOUT 
+
+' the reed switch sensor is confirmed to be closed if after 5ms the switch is still closed.
+state CONFIRMING_CLOSE 
+CONFIRMING_CLOSE : entry / if readSensorGPIO() then selfPost(SWITCH_OPEN, LIFO) else selfPost(SWITCH_CLOSED, LIFO)
+CONFIRMING_CLOSE --> WAIT_FOR_OPEN : SWITCH_CLOSED /  arm Timer1(50ms, repeating); arm Timer2(500ms, oneshot)  
+' false tip, switch opened prematurely, return to READY state
+CONFIRMING_CLOSE --> READY : SWITCH_OPEN            
+
+' wait for the switch to open by testing it every 50mS, FAULT condition after 500ms
+state WAIT_FOR_OPEN    
+WAIT_FOR_OPEN : entry / if not readSensorGPIO() then selfPost(SWITCH_OPEN, LIFO)
+WAIT_FOR_OPEN : exit / disarm Timer1; disarm Timer2
+WAIT_FOR_OPEN --> BUCKET_FAULT : FAULT_TIMEOUT
+WAIT_FOR_OPEN --> WAIT_FOR_OPEN : SWITCH_CLOSED 
+WAIT_FOR_OPEN --> CONFIRMED_TIPPED : SWITCH_OPEN
+
+
+' bucket tip signal confirmed, signal tip to ControlAO
+state CONFIRMED_TIPPED  
+CONFIRMED_TIPPED : entry / post(BUCKET_TIPPED) to ControlAO; selfPost(CONTINUE)
+CONFIRMED_TIPPED --> READY : CONTINUE
+
+' the bucket failed to return to its normal position within 500ms
+state BUCKET_FAULT  
+BUCKET_FAULT : entry / post(BUCKET_FAULT) to ControlAO; selfPost(CONTINUE)
+BUCKET_FAULT --> READY : CONTINUE
+
+@enduml

@@ -1,0 +1,41 @@
+@startuml
+' GENERATED from rain-gauge.collab; do not edit by hand.
+title Rain Gauge — AO Collaboration
+
+skinparam linetype ortho
+top to bottom direction
+
+component "BucketReedSwitchISR" as BucketReedSwitchISR
+component "BucketSensorAO" as BucketSensorAO
+component "RadioAO" as RadioAO
+component "ControlAO" as ControlAO
+
+BucketReedSwitchISR --> BucketSensorAO
+note on link
+  BucketReedSwitchISR -> BucketSensorAO
+    BUCKET_SWITCH_CLOSING
+end note
+
+BucketSensorAO <--> ControlAO
+note on link
+  BucketSensorAO -> ControlAO
+    BUCKET_TIPPED
+    BUCKET_SENSOR_BUSY
+    BUCKET_SENSOR_IDLE
+    RAIN_BUCKET_FAULT
+
+  ControlAO -> BucketSensorAO
+    BUCKET_SWITCH_CLOSING
+end note
+
+ControlAO <--> RadioAO
+note on link
+  ControlAO -> RadioAO
+    SEND_REPORT
+
+  RadioAO -> ControlAO
+    RADIO_BUSY
+    RADIO_IDLE
+end note
+
+@enduml
