@@ -300,7 +300,7 @@ For **each Active Object**:
 □ Define one statically allocated AO instance
 □ Export an opaque QActive pointer where required
 □ Allocate event queue storage
-□ Assign AO priority
+□ Assign a unique AO priority at start()
 □ Start the AO from application startup
 □ Add QSPY object/signal dictionaries
 ```
@@ -336,6 +336,44 @@ Follow the exact idiom required by the QP/C++ version being used.
 The point is that other application components need not know the
 concrete implementation of `Control`; they can interact through the QP
 Active Object interface.
+
+### AO priorities and startup assignment
+
+The HSM describes behaviour; the QP priority belongs to the **running AO
+instance** and is supplied as the first argument of `QActive::start()`.
+Higher numeric QP priorities take precedence over lower ones. Each registered
+AO needs its own unique QP priority; priorities are not assigned to states
+or individual events.
+
+The known-good `qp-lab/blinky-button/src/main.cpp` starts Blinky at priority
+1 and Button at priority 2:
+
+``` cpp
+AO_Blinky->start(1U, blinkyQueueSto, Q_DIM(blinkyQueueSto),
+                 nullptr, stack_size);
+AO_Button->start(2U, buttonQueueSto, Q_DIM(buttonQueueSto),
+                 nullptr, stack_size);
+```
+
+Keep application priority constants together rather than scattering literals:
+
+``` cpp
+enum : std::uint8_t {
+    CONTROL_PRIO = 1U,
+    RADIO_PRIO = 2U,
+    BUCKET_SENSOR_PRIO = 3U
+};
+```
+
+These rain-gauge values are **proposed**, not yet measured or fixed. The
+BucketSensorAO is the candidate highest-priority application AO because it
+recognizes time-sensitive physical events. Confirm the ordering during HIL
+testing, including radio activity and bursty switch events.
+
+Do not confuse QP AO priorities with ESP32 GPIO interrupt priorities or the
+FreeRTOS priorities of independently created tick/QSPY tasks. The ISR posts an
+event; the AO subsequently dispatches it. High priority does not compensate
+for insufficient queue capacity or a sleep-entry race.
 
 ------------------------------------------------------------------------
 
@@ -377,37 +415,143 @@ relevant busy bits are all clear.
 
 ------------------------------------------------------------------------
 
-## 5. Static and dynamic events
+## 5. Event types, storage, queues and lifetime
 
-### Static events
+### Static events: the default for payload-free notifications
 
-Parameterless, frequently used events can often be statically allocated:
+An immutable `QEvt` can be created once and posted repeatedly:
 
 ``` cpp
-static QP::QEvt const bucketBusyEvt {
-    BUCKET_SENSOR_BUSY
+static QP::QEvt const bucketClosingEvt {
+    BUCKET_SWITCH_CLOSING, 0U, 0U
 };
 ```
 
-This avoids dynamic allocation for simple notifications.
+Our known-good `qp-lab/blinky-button/src/bsp.cpp` posts such a static event
+from its GPIO ISR using the ESP32 port's `POST_FROM_ISR` API. The ISR
+allocates no event object. Multiple queued occurrences can point to the same
+immutable event; **each occurrence still consumes a queue slot**.
 
-### Dynamic events
+Do not mutate a static event's payload after posting it: queued pointers
+would then observe overwritten data if another occurrence arrived.
 
-Events carrying data can be dynamically allocated where appropriate:
+### Typed events with payloads
+
+For a payload, define a C++ type derived from `QP::QEvt`:
 
 ``` cpp
-auto *e = Q_NEW(SomeEvt, SOME_SIG);
-e->value = ...;
+struct RainReportEvt : public QP::QEvt {
+    std::uint32_t tipCount;
+    std::uint32_t uptimeMs;
+};
+
+struct FaultEvt : public QP::QEvt {
+    std::uint16_t faultCode;
+};
 ```
+
+An event type defines layout, while the signal identifies its meaning.
+Several signals may share one payload type when appropriate. A payload
+does **not** intrinsically require dynamic allocation: a suitably immutable,
+long-lived typed event can also be static. The issue is whether each
+outstanding occurrence needs its own independent payload snapshot.
+
+### QP fixed-block event pools
+
+QP's `Q_NEW` allocates a dynamic event from an **application-registered,
+fixed-block event pool**, not a fresh general-purpose heap allocation per
+event. The pool's backing storage can be static.
+
+Our known-good `qp-lab/blinky-button/src/main.cpp` already contains:
+
+``` cpp
+static QF_MPOOL_EL(QEvt) smlPoolSto[10];
+
+// during setup(), after QF::init() and before event allocation:
+QP::QF::poolInit(smlPoolSto, sizeof(smlPoolSto),
+                 sizeof(smlPoolSto[0]));
+```
+
+An illustrative payload allocation (requires a registered pool with blocks
+large enough for `RainReportEvt`):
+
+``` cpp
+auto *e = Q_NEW(RainReportEvt, SEND_REPORT);
+e->tipCount = currentTipCount;
+e->uptimeMs = currentUptime;
+AO_Radio->POST(e, nullptr);
+```
+
+The framework manages recycling of pooled events after dispatch; when an
+event is shared with multiple recipients it tracks outstanding references.
+Treat the payload as immutable once posted or published. Do not manually
+`delete` a QP pooled event.
+
+**Pools are grouped by block size, not by event subclass.** Five event
+types do not imply five pools. A pool can serve any event type that fits
+its block size. Register multiple pools in ascending block-size order;
+QP selects a suitably sized pool. Use `QF_MPOOL_EL(EventType)` for
+appropriately aligned backing storage, and check actual `sizeof` values
+on the target compiler rather than relying on illustrative byte counts.
+
+``` cpp
+// Illustrative only: choose sizes and capacities after reviewing event types.
+static QF_MPOOL_EL(RainReportEvt) smallPoolSto[16];
+static QF_MPOOL_EL(DiagnosticEvt) largePoolSto[4];
+
+QP::QF::poolInit(smallPoolSto, sizeof(smallPoolSto),
+                 sizeof(smallPoolSto[0]));
+QP::QF::poolInit(largePoolSto, sizeof(largePoolSto),
+                 sizeof(largePoolSto[0]));
+```
+
+Pool capacity limits the number of **simultaneously outstanding event
+objects**, not the lifetime number of events generated. Exhaustion is
+still possible and must be handled according to the selected QP allocation
+API and application fault policy. Size pools for worst-case outstanding
+events, including queueing and fan-out, with explicit margin.
+
+### AO queue storage is not event-pool storage
+
+``` cpp
+static QP::QEvt const *bucketQueueSto[20]; // event pointers in AO queue
+static QF_MPOOL_EL(RainReportEvt) reportPoolSto[8]; // event objects
+```
+
+A static event consumes queue entries but no pool blocks. A pooled event
+consumes a pool block while outstanding and a queue entry while queued.
+Review both capacities under HIL burst testing.
+
+### Rain-gauge allocation policy
+
+- Statically allocate AO instances, AO queue storage, timers and event-pool
+  backing storage.
+- Prefer immutable static `QEvt` objects for `BUCKET_SWITCH_CLOSING`,
+  BUSY/IDLE and other payload-free notifications.
+- Use a typed event when a receiver needs a payload. Choose static storage
+  only if its lifetime and immutability are safe; otherwise use a bounded
+  QP pool for independent snapshots.
+- Avoid general-purpose heap allocation in application event-handling and
+  ISR paths. Use only the port-supported ISR-safe posting mechanism.
+- Decide whether `BUCKET_TIPPED` and `SEND_REPORT` need immutable count/
+  report snapshots or can remain payload-free notifications; do not assume
+  shared mutable AO state is safe.
+- Before ESP32 deep sleep, commit accepted tips to retained state and
+  resolve in-flight work. Neither static allocation nor a QP pool makes
+  queued events survive a deep-sleep reset.
 
 ### Event checklist
 
 ``` text
-□ Does this signal require payload data?
-□ If not, can a static event instance be used?
-□ If it carries data, define the event type
-□ Identify ownership/lifetime rules
-□ Use the appropriate post/publish mechanism
+□ Is the event payload-free, or does it require a typed payload?
+□ Is a static immutable event safe for repeated occurrences?
+□ If pooled, is the block large enough and the pool registered at startup?
+□ Are pools registered in ascending block-size order?
+□ Are queue depth and outstanding pool-block count separately bounded?
+□ Is ownership clear after POST/PUBLISH, including multiple subscribers?
+□ Is ISR posting compatible with the ESP32 QP port?
+□ Can an in-flight event be lost at deep sleep, and is required state retained?
+□ Are pool/queue exhaustion and burst behaviour covered by HIL tests?
 ```
 
 ------------------------------------------------------------------------
