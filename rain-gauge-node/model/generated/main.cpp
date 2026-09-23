@@ -29,27 +29,75 @@
 //
 //$endhead${.::generated::main.cpp} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #include <Arduino.h>
-#include "qpcpp.hpp"
 #include "bsp.hpp"
+#include "qpcpp.hpp"
+#include "events.hpp"
 
 using namespace QP;
 
+// Each active object owns its event queue.
+static QEvt const* controlQueueSto[20];
+static QEvt const* bucketQueueSto[20];
+static QEvt const* radioQueueSto[20];
+static constexpr unsigned stack_size = 4096U;
+
+// Control allocates SendReportEvt dynamically. The pool must hold that type.
+static QF_MPOOL_EL(SendReportEvt) reportPoolSto[20];
+
+// The QPESP32 port used by blinky-button uses a dedicated 100 Hz tick task.
+static void qpTickTask(void* arg) {
+    (void)arg;
+    for (;;) {
+        QF::TICK_X(0U, nullptr);
+        vTaskDelay(pdMS_TO_TICKS(1000U / BSP::TICKS_PER_SEC));
+    }
+}
+
 void setup() {
-    // Initialise the QP framework.
+    // Preserve the startup sequence proven in qp-lab/blinky-button.
+    BSP::init();
     QF::init();
 
-    // Initialise the board and QSPY.
-    BSP::init();
+    QF::poolInit(reportPoolSto, sizeof(reportPoolSto),
+                 sizeof(reportPoolSto[0]));
 
-    // TODO: Configure the QP event pool.
-    // TODO: Start Control, TippingBucket and Radio.
-    // TODO: Start the QP tick source.
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Starting Control AO");
+    QS_END()
+#endif
+    AO_Control->start(1U, controlQueueSto, Q_DIM(controlQueueSto),
+                      nullptr, stack_size);
 
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Starting TippingBucket AO");
+    QS_END()
+#endif
+    AO_TippingBucket->start(2U, bucketQueueSto, Q_DIM(bucketQueueSto),
+                            nullptr, stack_size);
+
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Starting Radio AO");
+    QS_END()
+#endif
+    AO_Radio->start(3U, radioQueueSto, Q_DIM(radioQueueSto),
+                    nullptr, stack_size);
+
+    xTaskCreatePinnedToCore(qpTickTask, "qpTick", 2048, nullptr,
+                            configMAX_PRIORITIES - 1, nullptr, 1);
+
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Entering QF::run()");
+    QS_END()
+#endif
+    QF::run(); // This QPESP32 port returns after starting the AO tasks.
     BSP::start();
 }
 
 void loop() {
-    // Arduino requires loop(), but our application
-    // is driven by QP active objects.
-    delay(1000);
+    // The Arduino loop task must yield to the QP/FreeRTOS tasks.
+    vTaskDelay(pdMS_TO_TICKS(50));
 }
