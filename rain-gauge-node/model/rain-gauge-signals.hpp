@@ -17,6 +17,7 @@ enum AppSignals {
     SEND_REPORT_SIG,  // ControlAO -> RadioAO
     RADIO_BUSY_SIG,  // RadioAO -> ControlAO
     RADIO_IDLE_SIG,  // RadioAO -> ControlAO
+    RADIO_TX_DONE_SIG,  // RadioDIO0ISR -> RadioAO
 
     MAX_APP_SIG
 };

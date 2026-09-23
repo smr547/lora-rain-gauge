@@ -6,6 +6,7 @@ skinparam linetype ortho
 top to bottom direction
 
 component "BucketReedSwitchISR" as BucketReedSwitchISR
+component "RadioDIO0ISR" as RadioDIO0ISR
 component "BucketSensorAO" as BucketSensorAO
 component "RadioAO" as RadioAO
 component "ControlAO" as ControlAO
@@ -36,6 +37,12 @@ note on link
   RadioAO -> ControlAO
     RADIO_BUSY
     RADIO_IDLE
+end note
+
+RadioAO <-- RadioDIO0ISR
+note on link
+  RadioDIO0ISR -> RadioAO
+    RADIO_TX_DONE
 end note
 
 @enduml

@@ -3,6 +3,7 @@ title "Rain Gauge — AO Collaboration"
 
 # Active Objects
 ao BucketReedSwitchISR
+ao RadioDIO0ISR
 ao BucketSensorAO
 ao RadioAO
 ao ControlAO
@@ -47,5 +48,14 @@ collaboration ControlAO RadioAO
   RadioAO -> ControlAO
     RADIO_BUSY
     RADIO_IDLE
+end
+
+# The RadioAO initiates the Lora packet tranmission which then completes asynchronously. A hardware interrupt is used
+# to indicate the completion of the transmission
+#
+
+collaboration RadioAO RadioDIO0ISR
+  RadioDIO0ISR -> RadioAO
+    RADIO_TX_DONE
 end
 
