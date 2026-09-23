@@ -19,17 +19,17 @@ validator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validator)
 
 COLLAB = """collab 1
-ao BucketReedSwitchISR
-ao BucketSensorAO
-ao ControlAO
-ao RadioAO
-collaboration BucketReedSwitchISR BucketSensorAO
+isr BucketReedSwitch
+ao TippingBucket
+ao Control
+ao Radio
+collaboration BucketReedSwitch TippingBucket
 BUCKET_SWITCH_CLOSING
 end
-collaboration BucketSensorAO ControlAO
+collaboration TippingBucket Control
 BUCKET_TIPPED
 end
-collaboration ControlAO BucketSensorAO
+collaboration Control TippingBucket
 BUCKET_SWITCH_CLOSING
 end
 """
@@ -64,6 +64,17 @@ class ArchitectureTests(unittest.TestCase):
                 code = validator.main()
         return code, output.getvalue()
 
+    def test_isr_requires_no_qm_class(self):
+        code, output = self.run_validator()
+        self.assertEqual(code, 0, output)
+        self.assertNotIn("BucketReedSwitch: QM class", output)
+
+    def test_duplicate_participant_across_roles_is_error(self):
+        self.collab.write_text(COLLAB.replace("ao TippingBucket", "ao TippingBucket\nisr TippingBucket"), encoding="utf-8")
+        code, output = self.run_validator()
+        self.assertEqual(code, 2, output)
+        self.assertIn("duplicate participant", output)
+
     def test_generated_signal_declarations_are_recognised(self):
         code, output = self.run_validator()
         self.assertEqual(code, 0, output)
@@ -84,7 +95,7 @@ class ArchitectureTests(unittest.TestCase):
         ), encoding="utf-8")
         code, output = self.run_validator()
         self.assertEqual(code, 0, output)
-        self.assertIn("ControlAO (Control) has no QM transition for BUCKET_TIPPED", output)
+        self.assertIn("Control has no QM transition for BUCKET_TIPPED", output)
 
     def test_missing_qm_implementation_is_warning_not_error(self):
         self.qm.write_text('<model/>', encoding="utf-8")
