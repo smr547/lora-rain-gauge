@@ -9,6 +9,7 @@ import argparse
 import re
 import shlex
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from timer_contract import check_timers
 import sys
 import xml.etree.ElementTree as ET
