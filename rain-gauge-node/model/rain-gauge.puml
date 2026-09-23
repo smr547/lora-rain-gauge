@@ -5,43 +5,43 @@ title Rain Gauge — AO Collaboration
 skinparam linetype ortho
 top to bottom direction
 
-component "BucketReedSwitchISR" as BucketReedSwitchISR
-component "RadioDIO0ISR" as RadioDIO0ISR
-component "BucketSensorAO" as BucketSensorAO
-component "RadioAO" as RadioAO
-component "ControlAO" as ControlAO
+component "TippingBucket" as TippingBucket <<AO>>
+component "Control" as Control <<AO>>
+component "Radio" as Radio <<AO>>
+component "BucketReedSwitch" as BucketReedSwitch <<ISR>>
+component "RadioDIO0" as RadioDIO0 <<ISR>>
 
-BucketReedSwitchISR --> BucketSensorAO
+BucketReedSwitch --> TippingBucket
 note on link
-  BucketReedSwitchISR -> BucketSensorAO
+  BucketReedSwitch -> TippingBucket
     BUCKET_SWITCH_CLOSING
 end note
 
-BucketSensorAO <--> ControlAO
+TippingBucket <--> Control
 note on link
-  BucketSensorAO -> ControlAO
+  TippingBucket -> Control
     BUCKET_TIPPED
     BUCKET_SENSOR_BUSY
     BUCKET_SENSOR_IDLE
     RAIN_BUCKET_FAULT
 
-  ControlAO -> BucketSensorAO
+  Control -> TippingBucket
     BUCKET_SWITCH_CLOSING
 end note
 
-ControlAO <--> RadioAO
+Control <--> Radio
 note on link
-  ControlAO -> RadioAO
+  Control -> Radio
     SEND_REPORT
 
-  RadioAO -> ControlAO
+  Radio -> Control
     RADIO_BUSY
     RADIO_IDLE
 end note
 
-RadioAO <-- RadioDIO0ISR
+Radio <-- RadioDIO0
 note on link
-  RadioDIO0ISR -> RadioAO
+  RadioDIO0 -> Radio
     RADIO_TX_DONE
 end note
 

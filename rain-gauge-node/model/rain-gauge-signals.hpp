@@ -7,17 +7,17 @@
 
 enum AppSignals {
     // routes:
-    //   BucketReedSwitchISR -> BucketSensorAO
-    //   ControlAO -> BucketSensorAO
+    //   BucketReedSwitch -> TippingBucket
+    //   Control -> TippingBucket
     BUCKET_SWITCH_CLOSING_SIG = QP::Q_USER_SIG,
-    BUCKET_TIPPED_SIG,  // BucketSensorAO -> ControlAO
-    BUCKET_SENSOR_BUSY_SIG,  // BucketSensorAO -> ControlAO
-    BUCKET_SENSOR_IDLE_SIG,  // BucketSensorAO -> ControlAO
-    RAIN_BUCKET_FAULT_SIG,  // BucketSensorAO -> ControlAO
-    SEND_REPORT_SIG,  // ControlAO -> RadioAO
-    RADIO_BUSY_SIG,  // RadioAO -> ControlAO
-    RADIO_IDLE_SIG,  // RadioAO -> ControlAO
-    RADIO_TX_DONE_SIG,  // RadioDIO0ISR -> RadioAO
+    BUCKET_TIPPED_SIG,  // TippingBucket -> Control
+    BUCKET_SENSOR_BUSY_SIG,  // TippingBucket -> Control
+    BUCKET_SENSOR_IDLE_SIG,  // TippingBucket -> Control
+    RAIN_BUCKET_FAULT_SIG,  // TippingBucket -> Control
+    SEND_REPORT_SIG,  // Control -> Radio
+    RADIO_BUSY_SIG,  // Radio -> Control
+    RADIO_IDLE_SIG,  // Radio -> Control
+    RADIO_TX_DONE_SIG,  // RadioDIO0 -> Radio
 
     MAX_APP_SIG
 };
