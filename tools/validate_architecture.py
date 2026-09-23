@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Read-only, deliberately conservative Collab/QM architecture checker (v0.1).
+
+The collaboration source is the design intent. QM is a work in progress.
+Missing implementations are warnings; malformed sources and demonstrable
+contradictions are errors. This tool does not inspect generated C++.
+"""
+import argparse
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+AO = re.compile(r"^ao\s+(\w+)\s*$")
+START = re.compile(r"^collaboration\s+(\w+)\s+(\w+)\s*$")
+ROUTE = re.compile(r"^(\w+)\s*->\s*(\w+)\s*$")
+SIGNAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
+# Explicit design-to-implementation aliases, not a naming heuristic.
+QM_CLASSES = {
+    "BucketSensorAO": "TippingBucket",
+    "ControlAO": "Control",
+    "RadioAO": "Radio",
+}
+ISR_PARTICIPANTS = {"BucketReedSwitchISR", "RadioDIO0ISR"}
+
+
+def parse_collab(path):
+    participants, routes, block, sender, receiver = set(), [], False, None, None
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        match = AO.fullmatch(line)
+        if match and not block:
+            participants.add(match[1])
+            continue
+        match = START.fullmatch(line)
+        if match and not block:
+            sender, receiver = match.groups()
+            block = True
+            continue
+        if line == "end" and block:
+            block = False
+            sender = receiver = None
+            continue
+        if block:
+            match = ROUTE.fullmatch(line)
+            if match:
+                sender, receiver = match.groups()
+            elif SIGNAL.fullmatch(line):
+                routes.append((sender, receiver, line, number))
+            else:
+                raise ValueError(f"{path}:{number}: unrecognised collaboration line: {line}")
+        elif not (line == "collab 1" or line.startswith("title ")):
+            raise ValueError(f"{path}:{number}: unrecognised top-level line: {line}")
+    if block:
+        raise ValueError(f"{path}: unterminated collaboration")
+    return participants, routes
+
+
+def qm_facts(path):
+    root = ET.parse(path).getroot()
+    classes = {node.get("name"): node for node in root.findall(".//class")}
+    triggers = set()
+    for tran in root.findall(".//tran"):
+        triggers.update(re.findall(r"[A-Z][A-Z0-9_]*", tran.get("trig", "")))
+    # The QM model embeds C++ templates; the signal enum may be in a <text>.
+    source = "\n".join(node.text or "" for node in root.iter())
+    symbols = set(re.findall(r"\b[A-Z][A-Z0-9_]*_SIG\b", source))
+    return classes, triggers, symbols
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("collab", type=Path)
+    parser.add_argument("qm", type=Path)
+    args = parser.parse_args()
+    try:
+        participants, routes = parse_collab(args.collab)
+        classes, triggers, symbols = qm_facts(args.qm)
+    except (OSError, ValueError, ET.ParseError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    errors = warnings = 0
+    def report(level, message):
+        nonlocal errors, warnings
+        print(f"{level}: {message}")
+        errors += level == "ERROR"
+        warnings += level == "WARNING"
+
+    for sender, receiver, signal, line in routes:
+        if sender not in participants or receiver not in participants:
+            report("ERROR", f"collab:{line}: undeclared endpoint in {sender} -> {receiver}")
+        if signal + "_SIG" not in symbols:
+            report("WARNING", f"collab:{line}: {signal}_SIG not found in QM embedded sources")
+        if receiver not in ISR_PARTICIPANTS and signal not in triggers:
+            report("WARNING", f"collab:{line}: {receiver} has no QM transition for {signal}")
+    for participant in sorted(participants - ISR_PARTICIPANTS):
+        implementation = QM_CLASSES.get(participant)
+        if implementation is None:
+            report("WARNING", f"{participant}: no explicit QM class mapping")
+        elif implementation not in classes:
+            report("WARNING", f"{participant}: QM class {implementation} not yet implemented")
+
+    print(f"Architecture check: {len(participants)} participants, {len(routes)} routes; "
+          f"{errors} error(s), {warnings} warning(s).")
+    print("UNVERIFIED: C++ event posts, ISR wiring, payloads and end-to-end routing "
+          "are outside v0.1 scope.")
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
