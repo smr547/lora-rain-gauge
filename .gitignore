@@ -1,2 +1,3 @@
 docs/requirements/*.pdf
-*/generated
+.model
+
