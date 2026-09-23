@@ -61,9 +61,9 @@ def parse_collab(path):
 def qm_facts(path):
     root = ET.parse(path).getroot()
     classes = {node.get("name"): node for node in root.findall(".//class")}
-    triggers = set()
-    for tran in root.findall(".//tran"):
-        triggers.update(re.findall(r"[A-Z][A-Z0-9_]*", tran.get("trig", "")))
+    triggers = {}
+    for name, node in classes.items():
+        triggers[name] = {tran.get("trig", "") for tran in node.findall(".//tran")}
     # The QM model embeds C++ templates; the signal enum may be in a <text>.
     source = "\n".join(node.text or "" for node in root.iter())
     symbols = set(re.findall(r"\b[A-Z][A-Z0-9_]*_SIG\b", source))
@@ -74,10 +74,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("collab", type=Path)
     parser.add_argument("qm", type=Path)
+    parser.add_argument("--signals", type=Path, default=None,
+                        help="Collab-generated signal header (default: beside .collab)")
     args = parser.parse_args()
     try:
         participants, routes = parse_collab(args.collab)
-        classes, triggers, symbols = qm_facts(args.qm)
+        classes, triggers, qm_symbols = qm_facts(args.qm)
+        signal_path = args.signals or args.collab.with_name("rain-gauge-signals.hpp")
+        signal_text = signal_path.read_text(encoding="utf-8")
+        declared_signals = set(re.findall(r"\\b[A-Z][A-Z0-9_]*_SIG\\b", signal_text))
     except (OSError, ValueError, ET.ParseError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -92,10 +97,11 @@ def main():
     for sender, receiver, signal, line in routes:
         if sender not in participants or receiver not in participants:
             report("ERROR", f"collab:{line}: undeclared endpoint in {sender} -> {receiver}")
-        if signal + "_SIG" not in symbols:
-            report("WARNING", f"collab:{line}: {signal}_SIG not found in QM embedded sources")
-        if receiver not in ISR_PARTICIPANTS and signal not in triggers:
-            report("WARNING", f"collab:{line}: {receiver} has no QM transition for {signal}")
+        if signal + "_SIG" not in declared_signals:
+            report("ERROR", f"collab:{line}: {signal}_SIG missing from Collab-generated header")
+        implementation = QM_CLASSES.get(receiver)
+        if implementation in classes and signal not in triggers.get(implementation, set()):
+            report("WARNING", f"collab:{line}: {receiver} ({implementation}) has no QM transition for {signal}")
     for participant in sorted(participants - ISR_PARTICIPANTS):
         implementation = QM_CLASSES.get(participant)
         if implementation is None:
@@ -103,9 +109,10 @@ def main():
         elif implementation not in classes:
             report("WARNING", f"{participant}: QM class {implementation} not yet implemented")
 
-    print(f"Architecture check: {len(participants)} participants, {len(routes)} routes; "
+    print(f"Architecture check: {len(participants)} participants, {len(routes)} directed routes, "
+          f"{len(set(signal for _, _, signal, _ in routes))} unique signals; "
           f"{errors} error(s), {warnings} warning(s).")
-    print("UNVERIFIED: C++ event posts, ISR wiring, payloads and end-to-end routing "
+    print("UNVERIFIED: QM/header integration, C++ event posts, ISR wiring, payloads and end-to-end routing "
           "are outside v0.1 scope.")
     return 1 if errors else 0
 
