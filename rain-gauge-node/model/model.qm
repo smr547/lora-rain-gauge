@@ -101,6 +101,8 @@
                          │ └─ TippingBucketAO busy
                          └─── RadioAO busy</documentation>
    </attribute>
+   <attribute name="m_bucketTips" type="uint64_t" visibility="0x02" properties="0x00"/>
+   <attribute name="m_bucketFaults" type="uint64_t" visibility="0x02" properties="0x00"/>
    <operation name="Control" type="" visibility="0x00" properties="0x01">
     <documentation>Control constructor</documentation>
     <code>: QActive(Q_STATE_CAST(&amp;Control::initial))</code>
@@ -113,14 +115,14 @@
      </initial_glyph>
     </initial>
     <state name="Running">
-     <tran trig="TIPPING_BUCKET_IDLE">
-      <action>M_busyMask &amp;= ~TIPPING_BUCKET_BUSY;</action>
+     <tran trig="BUCKET_IDLE">
+      <action>M_busyMask &amp;= ~BUCKET_BUSY;</action>
       <tran_glyph conn="55,18,3,-1,28">
        <action box="0,-2,20,2"/>
       </tran_glyph>
      </tran>
-     <tran trig="TIPPING_BUCKET_BUSY">
-      <action>m_busyMask |= TIPPING_BUCKET_BUSY;</action>
+     <tran trig="BUCKET_BUSY">
+      <action>m_busyMask |= BUCKET_BUSY;</action>
       <tran_glyph conn="55,22,3,-1,28,-1">
        <action box="0,-2,21,2"/>
       </tran_glyph>
@@ -136,7 +138,31 @@
        <action box="0,-2,10,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph node="55,9,34,23"/>
+     <tran trig="RADIO_BUSY">
+      <action>m_busyMask |= RADIO_BUSY;</action>
+      <tran_glyph conn="55,30,3,-1,29">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="RADIO_IDLE">
+      <action>M_busyMask &amp;= ~RADIO_BUSY;</action>
+      <tran_glyph conn="55,36,3,-1,29">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="BUCKET_TIPPED">
+      <action brief="Increment tip counter">m_bucketTips++;</action>
+      <tran_glyph conn="55,44,3,-1,29">
+       <action box="0,-2,16,2"/>
+      </tran_glyph>
+     </tran>
+     <tran trig="BUCKET_FAULT">
+      <action>m_bucketFaults++;</action>
+      <tran_glyph conn="55,50,3,-1,30">
+       <action box="0,-2,10,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="55,9,34,57"/>
     </state>
     <state name="Sleeping">
      <state_glyph node="108,40,33,20"/>
@@ -146,6 +172,73 @@
   </class>
   <attribute name="AO_Control" type="QP::QActive * const" visibility="0x00" properties="0x00">
    <code>= &amp;Control::instance;</code>
+  </attribute>
+  <class name="Radio" superclass="qpcpp::QActive">
+   <attribute name="instance" type="Radio" visibility="0x00" properties="0x01"/>
+   <operation name="Radio" type="" visibility="0x00" properties="0x00">
+    <documentation>constructor</documentation>
+    <code>: QActive(Q_STATE_CAST(&amp;Radio::initial))</code>
+   </operation>
+   <statechart properties="0x00">
+    <initial target="../3/0">
+     <initial_glyph conn="80,6,5,0,3,13">
+      <action box="0,-2,10,2"/>
+     </initial_glyph>
+    </initial>
+    <state name="Idle">
+     <tran trig="SEND_REPORT" target="../../3/1">
+      <tran_glyph conn="23,31,2,3,7,41">
+       <action box="11,5,14,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="11,25,24,6"/>
+    </state>
+    <state name="Fault">
+     <tran trig="CONTINUE" target="../../1">
+      <tran_glyph conn="23,44,3,3,-16,-16,4">
+       <action box="-13,-4,13,2"/>
+      </tran_glyph>
+     </tran>
+     <state_glyph node="23,40,19,6"/>
+    </state>
+    <state name="Busy">
+     <entry brief="flag busy">// Busy entry
+AO_Control-&gt;POST(&amp;radioBusyEvt, this);
+</entry>
+     <exit brief="flag idle">
+// Busy exit
+AO_Control-&gt;POST(&amp;radioIdleEvt, this);</exit>
+     <state name="Initialising">
+      <tran trig="CONTINUE" target="../../../1">
+       <tran_glyph conn="84,27,2,1,1,-49">
+        <action box="-41,-1,10,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="66,19,32,8"/>
+     </state>
+     <state name="Transmitting">
+      <tran trig="RADIO_TX_DONE" target="../../../1">
+       <tran_glyph conn="97,39,1,2,13,-6,-79,-2">
+        <action box="-53,-8,18,2"/>
+       </tran_glyph>
+      </tran>
+      <tran trig="TIMEOUT" target="../../../2">
+       <tran_glyph conn="81,42,2,2,11,-47,-7">
+        <action box="-44,8,13,2"/>
+       </tran_glyph>
+      </tran>
+      <state_glyph node="64,36,33,6"/>
+     </state>
+     <state_glyph node="59,12,49,49">
+      <entry box="1,2,13,2"/>
+      <exit box="1,4,13,3"/>
+     </state_glyph>
+    </state>
+    <state_diagram size="157,74"/>
+   </statechart>
+  </class>
+  <attribute name="AO_Radio" type="QP::QActive * const" visibility="0x00" properties="0x00">
+   <code>= &amp;Radio::instance;</code>
   </attribute>
  </package>
  <directory name=".">
@@ -176,8 +269,10 @@ enum RainGaugeSignals {
     BUCKET_SWITCH_CLOSED_SIG,
     FAULT_TIMEOUT_SIG,
     CONTINUE_SIG,
-    TIPPING_BUCKET_IDLE_SIG,
-    TIPPING_BUCKET_BUSY_SIG,
+    BUCKET_IDLE_SIG,
+    BUCKET_BUSY_SIG,
+    RADIO_IDLE_SIG,
+    RADIO_BUSY_SIG,
     MAX_SIG
 };
 
@@ -472,6 +567,31 @@ void QP::QS::onReset(void) {
     esp_restart(); 
 }
 </text>
+   </file>
+   <file name="radio.cpp">
+    <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
+#include &quot;bsp.hpp&quot;   // Board Support Package interface
+
+
+
+// reusable event instances associated with  the Control AO
+
+// static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
+// static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
+
+using namespace QP;
+
+// ask QM to declare the Radio  class ----------------------------------------
+$declare${AOs::Radio}
+
+// opaque pointer to the Radio active object --------------------------------
+$define${AOs::AO_Radio}
+
+
+
+
+// ask QM to define the Control class (including the state machine) -----------
+$define${AOs::Radio}</text>
    </file>
   </directory>
  </directory>

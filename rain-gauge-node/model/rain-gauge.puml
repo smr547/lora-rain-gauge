@@ -21,9 +21,9 @@ TippingBucket <--> Control
 note on link
   TippingBucket -> Control
     BUCKET_TIPPED
-    BUCKET_SENSOR_BUSY
-    BUCKET_SENSOR_IDLE
-    RAIN_BUCKET_FAULT
+    BUCKET_BUSY
+    BUCKET_IDLE
+    BUCKET_FAULT
 
   Control -> TippingBucket
     BUCKET_SWITCH_CLOSING

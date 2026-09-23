@@ -50,6 +50,8 @@ public:
 
 private:
     std::uint8_t m_busyMask;
+    uint64_t m_bucketTips;
+    uint64_t m_bucketFaults;
 
 public:
     static Control();
@@ -103,15 +105,15 @@ Q_STATE_DEF(Control, initial) {
 Q_STATE_DEF(Control, Running) {
     QP::QState status_;
     switch (e->sig) {
-        //${AOs::Control::SM::Running::TIPPING_BUCKET_IDLE}
-        case TIPPING_BUCKET_IDLE_SIG: {
-            M_busyMask &= ~TIPPING_BUCKET_BUSY;
+        //${AOs::Control::SM::Running::BUCKET_IDLE}
+        case BUCKET_IDLE_SIG: {
+            M_busyMask &= ~BUCKET_BUSY;
             status_ = Q_RET_HANDLED;
             break;
         }
-        //${AOs::Control::SM::Running::TIPPING_BUCKET_BUSY}
-        case TIPPING_BUCKET_BUSY_SIG: {
-            m_busyMask |= TIPPING_BUCKET_BUSY;
+        //${AOs::Control::SM::Running::BUCKET_BUSY}
+        case BUCKET_BUSY_SIG: {
+            m_busyMask |= BUCKET_BUSY;
             status_ = Q_RET_HANDLED;
             break;
         }
@@ -124,6 +126,30 @@ Q_STATE_DEF(Control, Running) {
             else {
                 status_ = Q_RET_UNHANDLED;
             }
+            break;
+        }
+        //${AOs::Control::SM::Running::RADIO_BUSY}
+        case RADIO_BUSY_SIG: {
+            m_busyMask |= RADIO_BUSY;
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Control::SM::Running::RADIO_IDLE}
+        case RADIO_IDLE_SIG: {
+            M_busyMask &= ~RADIO_BUSY;
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Control::SM::Running::BUCKET_TIPPED}
+        case BUCKET_TIPPED_SIG: {
+            m_bucketTips++;
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Control::SM::Running::BUCKET_FAULT}
+        case BUCKET_FAULT_SIG: {
+            m_bucketFaults++;
+            status_ = Q_RET_HANDLED;
             break;
         }
         default: {
