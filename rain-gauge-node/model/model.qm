@@ -103,7 +103,7 @@
    </attribute>
    <attribute name="m_bucketTips" type="uint64_t" visibility="0x02" properties="0x00"/>
    <attribute name="m_bucketFaults" type="uint64_t" visibility="0x02" properties="0x00"/>
-   <operation name="Control" type="" visibility="0x00" properties="0x01">
+   <operation name="Control" type="" visibility="0x00" properties="0x00">
     <documentation>Control constructor</documentation>
     <code>: QActive(Q_STATE_CAST(&amp;Control::initial))</code>
    </operation>
@@ -116,7 +116,7 @@
     </initial>
     <state name="Running">
      <tran trig="BUCKET_IDLE">
-      <action>M_busyMask &amp;= ~BUCKET_BUSY;</action>
+      <action>m_busyMask &amp;= ~BUCKET_BUSY;</action>
       <tran_glyph conn="55,18,3,-1,28">
        <action box="0,-2,20,2"/>
       </tran_glyph>
@@ -145,7 +145,7 @@
       </tran_glyph>
      </tran>
      <tran trig="RADIO_IDLE">
-      <action>M_busyMask &amp;= ~RADIO_BUSY;</action>
+      <action>m_busyMask &amp;= ~RADIO_BUSY;</action>
       <tran_glyph conn="55,36,3,-1,29">
        <action box="0,-2,10,2"/>
       </tran_glyph>
@@ -187,7 +187,7 @@ AO_Radio-&gt;POST(report, this);</action>
    <attribute name="m_lastRadioError" type="int" visibility="0x02" properties="0x00"/>
    <attribute name="m_reportBucketTips" type="uint64_t" visibility="0x02" properties="0x00"/>
    <attribute name="m_reportBucketFaults" type="uint64_t" visibility="0x02" properties="0x00"/>
-   <attribute name="m_txTime" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
+   <attribute name="m_txTimer" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
    <attribute name="m_sequence" type="uint32_t" visibility="0x02" properties="0x00"/>
    <attribute name="m_txPacket" type="Telemetry::TelemetryPacket" visibility="0x00" properties="0x00"/>
    <operation name="Radio" type="" visibility="0x00" properties="0x00">
@@ -279,11 +279,11 @@ AO_Control-&gt;POST(&amp;radioBusyEvt, this);
 AO_Control-&gt;POST(&amp;radioIdleEvt, this);</exit>
      <state name="Initialising">
       <entry brief="Initialise hardware and continue">m_lastRadioError = BSP::radioInit();
-this-&gt;POST_LIFO(&amp;continueEvt, this);</entry>
+this-&gt;postLIFO(&amp;continueEvt);</entry>
       <tran trig="CONTINUE">
        <choice target="../../../../1">
         <guard brief="init OK">m_lastRadioError == RADIOLIB_ERR_NONE</guard>
-        <action brief="Increment sequence">m_sequence++;</action>
+        <action brief="Increment sequence"/>
         <choice_glyph conn="88,26,4,1,4,-50,-2,-2">
          <action box="-14,2,10,2"/>
         </choice_glyph>
@@ -306,9 +306,10 @@ this-&gt;POST_LIFO(&amp;continueEvt, this);</entry>
       <entry>m_txTimer.armX(TX_TIMEOUT_TICKS);</entry>
       <tran trig="RADIO_TX_DONE">
        <action>m_txTimer.disarm();
-m_lastRadioError = radio.finishTransmit();</action>
+m_lastRadioError = BSP::radioFinishTransmit();</action>
        <choice target="../../../../1">
         <guard brief="OK">m_lastRadioError == RADIOLIB_ERR_NONE</guard>
+        <action>m_sequence++;</action>
         <choice_glyph conn="82,44,5,2,20,-12,-68,-2">
          <action box="4,-3,10,2"/>
         </choice_glyph>
@@ -359,6 +360,7 @@ m_lastRadioError = radio.finishTransmit();</action>
 #include &lt;Arduino.h&gt;
 #include &quot;qpcpp.hpp&quot;
 
+#define NODE_ID 2
 
 static constexpr uint8_t BUCKET_PIN = 25;
 
@@ -385,6 +387,10 @@ enum RainGaugeSignals {
     BUCKET_SWITCH_CLOSING_SIG, //  sent by button ISR to AO_Button for debounce
     BUCKET_SWITCH_OPEN_SIG,
     BUCKET_SWITCH_CLOSED_SIG,
+    BUCKET_TIPPED_SIG,
+    BUCKET_FAULT_SIG, 
+    SEND_REPORT_SIG,
+    RADIO_TX_DONE_SIG,
     FAULT_TIMEOUT_SIG,
     CONTINUE_SIG,
     BUCKET_IDLE_SIG,
@@ -409,6 +415,7 @@ enum UserQSRecords {
 // active object(s) used in this application -------------------------------
 $declare${AOs::AO_TippingBucket}
 $declare${AOs::AO_Radio}
+$declare${AOs::AO_Control}
 #endif // BSP_HPP
 </text>
    </file>
@@ -424,6 +431,7 @@ static QP::QEvt const switchOpenEvt{BUCKET_SWITCH_OPEN_SIG, 0U, 0U};
 static QP::QEvt const switchClosedEvt{BUCKET_SWITCH_CLOSED_SIG, 0U, 0U};
 static QP::QEvt const faultTimeoutEvt{FAULT_TIMEOUT_SIG, 0U, 0U};
 
+
 using namespace QP;
 
 // ask QM to declare the Button class ----------------------------------------
@@ -438,13 +446,11 @@ $define${AOs::TippingBucket}</text>
    <file name="control.cpp">
     <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
 #include &quot;bsp.hpp&quot;   // Board Support Package interface
+#include &quot;events.hpp&quot;
 
 
 
-// reusable event instances associated with  the Control AO
 
-static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
-static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
 
 using namespace QP;
 
@@ -457,8 +463,8 @@ $define${AOs::AO_Control}
 
 // busyFlag manipulation
 
-static constexpr std::uint8_t TIPPING_BUCKET_BUSY = 1U &lt;&lt; 0;
-static constexpr std::uint8_t RADIO_BUSY          = 1U &lt;&lt; 1;
+static constexpr std::uint8_t BUCKET_BUSY = 1U &lt;&lt; 0;
+static constexpr std::uint8_t RADIO_BUSY = 1U &lt;&lt; 1;
 
 // ask QM to define the Control class (including the state machine) -----------
 $define${AOs::Control}</text>
@@ -490,9 +496,9 @@ static HardwareSerial&amp; qsSerial = Serial2;
 // flash the onboard led as an out-of-band diagnostic tool
 static void checkpoint(unsigned n) {
     for (unsigned i = 0; i &lt; n; ++i) {
-        digitalWrite(LED_PIN, HIGH);
+//        digitalWrite(LED_PIN, HIGH);
         delay(80);
-        digitalWrite(LED_PIN, LOW);
+//        digitalWrite(LED_PIN, LOW);
         delay(80);
     }
     delay(400);
@@ -522,11 +528,17 @@ static QP::QEvt const radioTxDoneEvt{RADIO_TX_DONE_SIG, 0U, 0U};
 
 static void IRAM_ATTR radioDio0ISR()
 {
-    QACTIVE_POST_FROM_ISR(
-        AO_Radio,
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    AO_Radio-&gt;POST_FROM_ISR(
         &amp;radioTxDoneEvt,
+        &amp;xHigherPriorityTaskWoken,
         nullptr
     );
+
+    if (xHigherPriorityTaskWoken != pdFALSE) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 // Reusable event: ISR -&gt; TippingBucket AO
@@ -535,7 +547,6 @@ static QP::QEvt const bucketSwitchClosingEvt{
 };
 
 // GPIO interrupt callback
-static void IRAM_ATTR bucketReedSwitchISR()
 static void IRAM_ATTR bucketReedSwitchISR()
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -611,8 +622,7 @@ void BSP::init() {
     // and ensure they don't change.
 
 
-    pinMode(BUCKET_PIN, INPUT_PULLUP);
-    digitalWrite(LED_PIN, LOW);
+    // digitalWrite(LED_PIN, LOW);
 
 #ifdef Q_SPY
 #ifdef LILYGO_T3
@@ -646,7 +656,6 @@ void BSP::init() {
     QS_GLB_FILTER(QS_ASSERT);
     QS_GLB_FILTER(QS_ERROR);
     QS_GLB_FILTER(QS_USER_BUTTON);
-    QS_GLB_FILTER(QS_BUTTON_BOUNCE);
 
     QS_BEGIN_ID(QS_BOOT, 0U)
     QS_STR(&quot;BSP::init: QS online&quot;);
@@ -673,7 +682,7 @@ void BSP::init() {
 #endif
     // initialise the button pin
 
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    pinMode(BUCKET_PIN, INPUT_PULLUP);
 
 // =========== ISR ==========
 #ifdef Q_SPY
@@ -681,7 +690,7 @@ void BSP::init() {
     QS_STR(&quot;Configuring BUTTON interrupt&quot;);
     QS_END()
 #endif
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+    
 #ifdef Q_SPY
     QS_BEGIN_ID(QS_BOOT, 0U)
     QS_STR(&quot;BUTTON interrupt configured&quot;);
@@ -691,17 +700,15 @@ void BSP::init() {
 
 void BSP::start() {}
 
-void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
+// void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
 
-void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
+// void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
 
 void BSP::terminate(int16_t) {
     for (;;) {
         delay(100);
     }
 }
-
-bool BSP::buttonPressed(void) { return digitalRead(BUTTON_PIN) == LOW; }
 
 extern &quot;C&quot; void Q_onError(char const* const module, int_t const id) {
 #ifdef Q_SPY
@@ -762,17 +769,16 @@ int16_t BSP::radioInit() {
 }
 
 
-static BSP::int16_t BSP::radioStartTransmit(
+int16_t BSP::radioStartTransmit(
     uint8_t const *data,
     size_t length
 ) {
     return radio.startTransmit(data, length);
 }
 
-static int16_t BSP::radioFinishTransmit() {
+int16_t BSP::radioFinishTransmit() {
     return radio.finishTransmit();
 }
-
 void assert_failed(char const* const module, int_t const id) {
     Q_onError(module, id);
 }
@@ -834,11 +840,17 @@ extern &quot;C&quot; void Q_onAssert(char const* const module, int_t const id) {
     <text>#include &quot;qpcpp.hpp&quot;  // QP/C++ framework API
 #include &quot;bsp.hpp&quot;    // Board Support Package interface
 #include &quot;events.hpp&quot; // QM-generated application event classes
+#include &lt;RadioLib.h&gt;
 #include &quot;telemetry_protocol.hpp&quot;
+
+// Radio transmission timeout: 5 seconds
+static constexpr std::uint32_t TX_TIMEOUT_TICKS =
+    5U * BSP::TICKS_PER_SEC;
 
 // Reusable events posted by Radio to Control
 static QP::QEvt const radioBusyEvt{RADIO_BUSY_SIG, 0U, 0U};
 static QP::QEvt const radioIdleEvt{RADIO_IDLE_SIG, 0U, 0U};
+static QP::QEvt const continueEvt{CONTINUE_SIG, 0U, 0U};
 
 
 using namespace QP;
@@ -864,6 +876,33 @@ $define${AOs::Radio}</text>
 $declare${Events::SendReportEvt}
 
 #endif // EVENTS_HPP</text>
+   </file>
+   <file name="main.cpp">
+    <text>#include &lt;Arduino.h&gt;
+#include &quot;qpcpp.hpp&quot;
+#include &quot;bsp.hpp&quot;
+
+using namespace QP;
+
+void setup() {
+    // Initialise the QP framework.
+    QF::init();
+
+    // Initialise the board and QSPY.
+    BSP::init();
+
+    // TODO: Configure the QP event pool.
+    // TODO: Start Control, TippingBucket and Radio.
+    // TODO: Start the QP tick source.
+
+    BSP::start();
+}
+
+void loop() {
+    // Arduino requires loop(), but our application
+    // is driven by QP active objects.
+    delay(1000);
+}</text>
    </file>
   </directory>
  </directory>

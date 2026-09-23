@@ -54,9 +54,9 @@ static HardwareSerial& qsSerial = Serial2;
 // flash the onboard led as an out-of-band diagnostic tool
 static void checkpoint(unsigned n) {
     for (unsigned i = 0; i < n; ++i) {
-        digitalWrite(LED_PIN, HIGH);
+//        digitalWrite(LED_PIN, HIGH);
         delay(80);
-        digitalWrite(LED_PIN, LOW);
+//        digitalWrite(LED_PIN, LOW);
         delay(80);
     }
     delay(400);
@@ -86,11 +86,17 @@ static QP::QEvt const radioTxDoneEvt{RADIO_TX_DONE_SIG, 0U, 0U};
 
 static void IRAM_ATTR radioDio0ISR()
 {
-    QACTIVE_POST_FROM_ISR(
-        AO_Radio,
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    AO_Radio->POST_FROM_ISR(
         &radioTxDoneEvt,
+        &xHigherPriorityTaskWoken,
         nullptr
     );
+
+    if (xHigherPriorityTaskWoken != pdFALSE) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 // Reusable event: ISR -> TippingBucket AO
@@ -99,7 +105,6 @@ static QP::QEvt const bucketSwitchClosingEvt{
 };
 
 // GPIO interrupt callback
-static void IRAM_ATTR bucketReedSwitchISR()
 static void IRAM_ATTR bucketReedSwitchISR()
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -175,8 +180,7 @@ void BSP::init() {
     // and ensure they don't change.
 
 
-    pinMode(BUCKET_PIN, INPUT_PULLUP);
-    digitalWrite(LED_PIN, LOW);
+    // digitalWrite(LED_PIN, LOW);
 
 #ifdef Q_SPY
 #ifdef LILYGO_T3
@@ -210,7 +214,6 @@ void BSP::init() {
     QS_GLB_FILTER(QS_ASSERT);
     QS_GLB_FILTER(QS_ERROR);
     QS_GLB_FILTER(QS_USER_BUTTON);
-    QS_GLB_FILTER(QS_BUTTON_BOUNCE);
 
     QS_BEGIN_ID(QS_BOOT, 0U)
     QS_STR("BSP::init: QS online");
@@ -237,7 +240,7 @@ void BSP::init() {
 #endif
     // initialise the button pin
 
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    pinMode(BUCKET_PIN, INPUT_PULLUP);
 
 // =========== ISR ==========
 #ifdef Q_SPY
@@ -245,7 +248,7 @@ void BSP::init() {
     QS_STR("Configuring BUTTON interrupt");
     QS_END()
 #endif
-    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+
 #ifdef Q_SPY
     QS_BEGIN_ID(QS_BOOT, 0U)
     QS_STR("BUTTON interrupt configured");
@@ -255,17 +258,15 @@ void BSP::init() {
 
 void BSP::start() {}
 
-void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
+// void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
 
-void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
+// void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
 
 void BSP::terminate(int16_t) {
     for (;;) {
         delay(100);
     }
 }
-
-bool BSP::buttonPressed(void) { return digitalRead(BUTTON_PIN) == LOW; }
 
 extern "C" void Q_onError(char const* const module, int_t const id) {
 #ifdef Q_SPY
@@ -326,17 +327,16 @@ int16_t BSP::radioInit() {
 }
 
 
-static BSP::int16_t BSP::radioStartTransmit(
+int16_t BSP::radioStartTransmit(
     uint8_t const *data,
     size_t length
 ) {
     return radio.startTransmit(data, length);
 }
 
-static int16_t BSP::radioFinishTransmit() {
+int16_t BSP::radioFinishTransmit() {
     return radio.finishTransmit();
 }
-
 void assert_failed(char const* const module, int_t const id) {
     Q_onError(module, id);
 }

@@ -31,11 +31,17 @@
 #include "qpcpp.hpp"  // QP/C++ framework API
 #include "bsp.hpp"    // Board Support Package interface
 #include "events.hpp" // QM-generated application event classes
+#include <RadioLib.h>
 #include "telemetry_protocol.hpp"
+
+// Radio transmission timeout: 5 seconds
+static constexpr std::uint32_t TX_TIMEOUT_TICKS =
+    5U * BSP::TICKS_PER_SEC;
 
 // Reusable events posted by Radio to Control
 static QP::QEvt const radioBusyEvt{RADIO_BUSY_SIG, 0U, 0U};
 static QP::QEvt const radioIdleEvt{RADIO_IDLE_SIG, 0U, 0U};
+static QP::QEvt const continueEvt{CONTINUE_SIG, 0U, 0U};
 
 
 using namespace QP;
@@ -52,7 +58,7 @@ private:
     int m_lastRadioError;
     uint64_t m_reportBucketTips;
     uint64_t m_reportBucketFaults;
-    QP::QTimeEvt m_txTime;
+    QP::QTimeEvt m_txTimer;
     uint32_t m_sequence;
 
 public:
@@ -232,7 +238,7 @@ Q_STATE_DEF(Radio, Initialising) {
         //${AOs::Radio::SM::Busy::Initialising}
         case Q_ENTRY_SIG: {
             m_lastRadioError = BSP::radioInit();
-            this->POST_LIFO(&continueEvt, this);
+            this->postLIFO(&continueEvt);
             status_ = Q_RET_HANDLED;
             break;
         }
@@ -240,7 +246,6 @@ Q_STATE_DEF(Radio, Initialising) {
         case CONTINUE_SIG: {
             //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[initOK]}
             if (m_lastRadioError == RADIOLIB_ERR_NONE) {
-                m_sequence++;
                 status_ = tran(&Idle);
             }
             //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[error]}
@@ -270,9 +275,10 @@ Q_STATE_DEF(Radio, Transmitting) {
         //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE}
         case RADIO_TX_DONE_SIG: {
             m_txTimer.disarm();
-            m_lastRadioError = radio.finishTransmit();
+            m_lastRadioError = BSP::radioFinishTransmit();
             //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE::[OK]}
             if (m_lastRadioError == RADIOLIB_ERR_NONE) {
+                m_sequence++;
                 status_ = tran(&Idle);
             }
             //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE::[error]}

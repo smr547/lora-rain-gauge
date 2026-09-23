@@ -30,13 +30,11 @@
 //$endhead${.::generated::control.cpp} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #include "qpcpp.hpp" // QP/C++ framework API
 #include "bsp.hpp"   // Board Support Package interface
+#include "events.hpp"
 
 
 
-// reusable event instances associated with  the Control AO
 
-static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
-static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
 
 using namespace QP;
 
@@ -54,7 +52,7 @@ private:
     uint64_t m_bucketFaults;
 
 public:
-    static Control();
+    Control();
 
 protected:
     Q_STATE_DECL(initial);
@@ -80,8 +78,8 @@ QP::QActive * const AO_Control = &Control::instance;
 
 // busyFlag manipulation
 
-static constexpr std::uint8_t TIPPING_BUCKET_BUSY = 1U << 0;
-static constexpr std::uint8_t RADIO_BUSY          = 1U << 1;
+static constexpr std::uint8_t BUCKET_BUSY = 1U << 0;
+static constexpr std::uint8_t RADIO_BUSY = 1U << 1;
 
 // ask QM to define the Control class (including the state machine) -----------
 //$define${AOs::Control} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -111,7 +109,7 @@ Q_STATE_DEF(Control, Running) {
     switch (e->sig) {
         //${AOs::Control::SM::Running::BUCKET_IDLE}
         case BUCKET_IDLE_SIG: {
-            M_busyMask &= ~BUCKET_BUSY;
+            m_busyMask &= ~BUCKET_BUSY;
             status_ = Q_RET_HANDLED;
             break;
         }
@@ -140,7 +138,7 @@ Q_STATE_DEF(Control, Running) {
         }
         //${AOs::Control::SM::Running::RADIO_IDLE}
         case RADIO_IDLE_SIG: {
-            M_busyMask &= ~RADIO_BUSY;
+            m_busyMask &= ~RADIO_BUSY;
             status_ = Q_RET_HANDLED;
             break;
         }

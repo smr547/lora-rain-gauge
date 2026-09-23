@@ -39,6 +39,7 @@ static QP::QEvt const switchOpenEvt{BUCKET_SWITCH_OPEN_SIG, 0U, 0U};
 static QP::QEvt const switchClosedEvt{BUCKET_SWITCH_CLOSED_SIG, 0U, 0U};
 static QP::QEvt const faultTimeoutEvt{FAULT_TIMEOUT_SIG, 0U, 0U};
 
+
 using namespace QP;
 
 // ask QM to declare the Button class ----------------------------------------

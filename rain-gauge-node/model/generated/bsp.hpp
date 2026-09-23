@@ -34,6 +34,7 @@
 #include <Arduino.h>
 #include "qpcpp.hpp"
 
+#define NODE_ID 2
 
 static constexpr uint8_t BUCKET_PIN = 25;
 
@@ -60,6 +61,10 @@ enum RainGaugeSignals {
     BUCKET_SWITCH_CLOSING_SIG, //  sent by button ISR to AO_Button for debounce
     BUCKET_SWITCH_OPEN_SIG,
     BUCKET_SWITCH_CLOSED_SIG,
+    BUCKET_TIPPED_SIG,
+    BUCKET_FAULT_SIG,
+    SEND_REPORT_SIG,
+    RADIO_TX_DONE_SIG,
     FAULT_TIMEOUT_SIG,
     CONTINUE_SIG,
     BUCKET_IDLE_SIG,
@@ -92,5 +97,10 @@ extern QP::QActive * const AO_TippingBucket;
 //${AOs::AO_Radio} ...........................................................
 extern QP::QActive * const AO_Radio;
 //$enddecl${AOs::AO_Radio} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//$declare${AOs::AO_Control} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+//${AOs::AO_Control} .........................................................
+extern QP::QActive * const AO_Control;
+//$enddecl${AOs::AO_Control} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #endif // BSP_HPP
 
