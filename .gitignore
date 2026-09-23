@@ -1,3 +1,5 @@
 docs/requirements/*.pdf
 .model
 
+__pycache__/
+*.py[cod]
