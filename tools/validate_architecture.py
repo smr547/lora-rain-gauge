@@ -7,6 +7,9 @@ contradictions are errors. This tool does not inspect generated C++.
 """
 import argparse
 import re
+import shlex
+
+from timer_contract import check_timers
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -19,9 +22,23 @@ SIGNAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 def parse_collab(path):
     participants, routes, block, sender, receiver = {}, [], False, None, None
+    timers = {}
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
+            continue
+        if not block and line.startswith("timer "):
+            try:
+                fields = shlex.split(line)
+            except ValueError as exc:
+                raise ValueError(f"{path}:{number}: invalid timer declaration: {exc}") from exc
+            if len(fields) not in (2, 3) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", fields[1]):
+                raise ValueError(f"{path}:{number}: expected timer Name [quoted cadence]")
+            name = fields[1]
+            if name in participants:
+                raise ValueError(f"{path}:{number}: duplicate participant {name}")
+            participants[name] = "timer"
+            timers[name] = fields[2] if len(fields) == 3 else ""
             continue
         match = PARTICIPANT.fullmatch(line)
         if match and not block:
@@ -51,7 +68,7 @@ def parse_collab(path):
             raise ValueError(f"{path}:{number}: unrecognised top-level line: {line}")
     if block:
         raise ValueError(f"{path}: unterminated collaboration")
-    return participants, routes
+    return participants, routes, timers
 
 
 def qm_facts(path):
@@ -74,7 +91,7 @@ def main():
                         help="Collab-generated signal header (default: beside .collab)")
     args = parser.parse_args()
     try:
-        participants, routes = parse_collab(args.collab)
+        participants, routes, timers = parse_collab(args.collab)
         classes, triggers, qm_symbols = qm_facts(args.qm)
         signal_path = args.signals or args.collab.with_name(args.collab.stem + "-signals.hpp")
         signal_text = signal_path.read_text(encoding="utf-8")
@@ -100,6 +117,8 @@ def main():
     for participant, role in sorted(participants.items()):
         if role == "ao" and participant not in classes:
             report("WARNING", f"{participant}: QM class {participant} not yet implemented")
+
+    check_timers(timers, routes, args.qm, report)
 
     print(f"Architecture check: {len(participants)} participants, {len(routes)} directed routes, "
           f"{len(set(signal for _, _, signal, _ in routes))} unique signals; "
