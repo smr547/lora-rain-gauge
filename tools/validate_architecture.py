@@ -11,7 +11,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-AO = re.compile(r"^ao\s+(\w+)\s*$")
+PARTICIPANT = re.compile(r"^(ao|isr)\s+([A-Za-z_][A-Za-z0-9_]*)\s*$")
 START = re.compile(r"^collaboration\s+(\w+)\s+(\w+)\s*$")
 ROUTE = re.compile(r"^(\w+)\s*->\s*(\w+)\s*$")
 SIGNAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
