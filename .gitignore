@@ -1,5 +1,6 @@
 docs/requirements/*.pdf
 .model
-
+.pio/
+.vscode/
 __pycache__/
 *.py[cod]

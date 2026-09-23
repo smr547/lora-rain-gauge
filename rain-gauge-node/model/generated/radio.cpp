@@ -28,19 +28,19 @@
 // <info@state-machine.com>
 //
 //$endhead${.::generated::radio.cpp} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#include "qpcpp.hpp" // QP/C++ framework API
-#include "bsp.hpp"   // Board Support Package interface
+#include "qpcpp.hpp"  // QP/C++ framework API
+#include "bsp.hpp"    // Board Support Package interface
+#include "events.hpp" // QM-generated application event classes
+#include "telemetry_protocol.hpp"
 
+// Reusable events posted by Radio to Control
+static QP::QEvt const radioBusyEvt{RADIO_BUSY_SIG, 0U, 0U};
+static QP::QEvt const radioIdleEvt{RADIO_IDLE_SIG, 0U, 0U};
 
-
-// reusable event instances associated with  the Control AO
-
-// static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
-// static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
 
 using namespace QP;
 
-// ask QM to declare the Radio  class ----------------------------------------
+// Radio class declaration
 //$declare${AOs::Radio} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 //${AOs::Radio} ..............................................................
@@ -48,8 +48,21 @@ class Radio : public QP::QActive {
 public:
     static Radio instance;
 
+private:
+    int m_lastRadioError;
+    uint64_t m_reportBucketTips;
+    uint64_t m_reportBucketFaults;
+    QP::QTimeEvt m_txTime;
+    uint32_t m_sequence;
+
+public:
+    Telemetry::TelemetryPacket m_txPacket;
+
 public:
     Radio();
+
+private:
+    int16_t prepareAndStartTransmission();
 
 protected:
     Q_STATE_DECL(initial);
@@ -61,7 +74,7 @@ protected:
 }; // class Radio
 //$enddecl${AOs::Radio} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-// opaque pointer to the Radio active object --------------------------------
+// Opaque pointer to the Radio active object
 //$skip${QP_VERSION} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 // Check for the minimum required QP version
 #if (QP_VERSION < 700U) || (QP_VERSION != ((QP_RELEASE^4294967295U) % 0x3E8U))
@@ -75,10 +88,7 @@ protected:
 QP::QActive * const AO_Radio = &Radio::instance;
 //$enddef${AOs::AO_Radio} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
-
-
-// ask QM to define the Control class (including the state machine) -----------
+// Radio class and state-machine implementation
 //$define${AOs::Radio} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 //${AOs::Radio} ..............................................................
@@ -86,12 +96,54 @@ Radio Radio::instance;
 
 //${AOs::Radio::Radio} .......................................................
 Radio::Radio()
-: QActive(Q_STATE_CAST(&Radio::initial))
+: QActive(Q_STATE_CAST(&Radio::initial)),
+  m_txTimer(this, RADIO_TX_TIMEOUT_SIG, 0U),
+  m_sequence{0U},
+  m_txPacket{}
 {}
+
+//${AOs::Radio::prepareAndStartTransmission} .................................
+int16_t Radio::prepareAndStartTransmission() {
+    // Prepare the Radio-owned transmission buffer.
+        // It remains valid throughout the asynchronous transmission.
+        m_txPacket = {};
+
+        m_txPacket.magic    = Telemetry::MAGIC;
+        m_txPacket.version  = Telemetry::VERSION;
+        m_txPacket.node_id  = NODE_ID;
+        m_txPacket.msg_type = Telemetry::MSG_REPORT;
+
+        // Sequence number is advanced after successful TX completion.
+        m_txPacket.seq       = m_sequence;
+        m_txPacket.uptime_ms = millis();
+
+        // Placeholder measurements for the first end-to-end test.
+        m_txPacket.temp_c_x100 = 0;
+        m_txPacket.supply_mv   = 0;
+        m_txPacket.battery_mv  = 0;
+        m_txPacket.wake_reason = 0;
+
+        // CRC covers the first 19 bytes of the packet.
+        Telemetry::updateCrc(m_txPacket);
+
+        // Initiate asynchronous transmission.
+        return BSP::radioStartTransmit(
+            reinterpret_cast<uint8_t const *>(&m_txPacket),
+            sizeof(m_txPacket)
+        );
+
+}
 
 //${AOs::Radio::SM} ..........................................................
 Q_STATE_DEF(Radio, initial) {
     //${AOs::Radio::SM::initial}
+
+    QS_FUN_DICTIONARY(&Radio::Idle);
+    QS_FUN_DICTIONARY(&Radio::Fault);
+    QS_FUN_DICTIONARY(&Radio::Busy);
+    QS_FUN_DICTIONARY(&Radio::Initialising);
+    QS_FUN_DICTIONARY(&Radio::Transmitting);
+
     return tran(&Initialising);
 }
 
@@ -101,7 +153,23 @@ Q_STATE_DEF(Radio, Idle) {
     switch (e->sig) {
         //${AOs::Radio::SM::Idle::SEND_REPORT}
         case SEND_REPORT_SIG: {
-            status_ = tran(&Transmitting);
+            auto const *report =
+                static_cast<SendReportEvt const *>(e);
+
+            m_reportBucketTips   = report->bucketTips;
+            m_reportBucketFaults = report->bucketFaults;
+
+            m_lastRadioError = prepareAndStartTransmission();
+
+
+            //${AOs::Radio::SM::Idle::SEND_REPORT::[OK]}
+            if (m_lastRadioError == RADIOLIB_ERR_NONE) {
+                status_ = tran(&Transmitting);
+            }
+            //${AOs::Radio::SM::Idle::SEND_REPORT::[error]}
+            else {
+                status_ = tran(&Fault);
+            }
             break;
         }
         default: {
@@ -161,9 +229,24 @@ Q_STATE_DEF(Radio, Busy) {
 Q_STATE_DEF(Radio, Initialising) {
     QP::QState status_;
     switch (e->sig) {
+        //${AOs::Radio::SM::Busy::Initialising}
+        case Q_ENTRY_SIG: {
+            m_lastRadioError = BSP::radioInit();
+            this->POST_LIFO(&continueEvt, this);
+            status_ = Q_RET_HANDLED;
+            break;
+        }
         //${AOs::Radio::SM::Busy::Initialising::CONTINUE}
         case CONTINUE_SIG: {
-            status_ = tran(&Idle);
+            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[initOK]}
+            if (m_lastRadioError == RADIOLIB_ERR_NONE) {
+                m_sequence++;
+                status_ = tran(&Idle);
+            }
+            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[error]}
+            else {
+                status_ = tran(&Fault);
+            }
             break;
         }
         default: {
@@ -178,13 +261,28 @@ Q_STATE_DEF(Radio, Initialising) {
 Q_STATE_DEF(Radio, Transmitting) {
     QP::QState status_;
     switch (e->sig) {
-        //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE}
-        case RADIO_TX_DONE_SIG: {
-            status_ = tran(&Idle);
+        //${AOs::Radio::SM::Busy::Transmitting}
+        case Q_ENTRY_SIG: {
+            m_txTimer.armX(TX_TIMEOUT_TICKS);
+            status_ = Q_RET_HANDLED;
             break;
         }
-        //${AOs::Radio::SM::Busy::Transmitting::TIMEOUT}
-        case TIMEOUT_SIG: {
+        //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE}
+        case RADIO_TX_DONE_SIG: {
+            m_txTimer.disarm();
+            m_lastRadioError = radio.finishTransmit();
+            //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE::[OK]}
+            if (m_lastRadioError == RADIOLIB_ERR_NONE) {
+                status_ = tran(&Idle);
+            }
+            //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_DONE::[error]}
+            else {
+                status_ = tran(&Fault);
+            }
+            break;
+        }
+        //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_TIMEOUT}
+        case RADIO_TX_TIMEOUT_SIG: {
             status_ = tran(&Fault);
             break;
         }

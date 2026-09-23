@@ -28,6 +28,7 @@
 // <info@state-machine.com>
 //
 //$endhead${.::generated::bsp.hpp} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#ifndef BSP_HPP
 #define BSP_HPP
 
 #include <Arduino.h>
@@ -42,8 +43,16 @@ public:
     enum { TICKS_PER_SEC = 100 }; // numer of clock ticks in a second
     static void init(void);
     static void terminate(int16_t);
-    static void start(void)
+    static void start(void);
     static void goToSleep(void);
+    static int16_t radioInit();
+    static int16_t radioStartTransmit(
+        uint8_t const *data,
+        size_t length
+    );
+
+    static int16_t radioFinishTransmit();
+
 };
 
 enum RainGaugeSignals {
@@ -57,6 +66,7 @@ enum RainGaugeSignals {
     BUCKET_BUSY_SIG,
     RADIO_IDLE_SIG,
     RADIO_BUSY_SIG,
+    RADIO_TX_TIMEOUT_SIG,
     MAX_SIG
 };
 
@@ -77,4 +87,10 @@ enum UserQSRecords {
 //${AOs::AO_TippingBucket} ...................................................
 extern QP::QActive * const AO_TippingBucket;
 //$enddecl${AOs::AO_TippingBucket} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//$declare${AOs::AO_Radio} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
+//${AOs::AO_Radio} ...........................................................
+extern QP::QActive * const AO_Radio;
+//$enddecl${AOs::AO_Radio} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #endif // BSP_HPP
+

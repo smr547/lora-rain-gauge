@@ -12,7 +12,7 @@
   m_checkTimer(this, TIMEOUT_SIG, 0U),
   m_faultTimer(this, FAULT_TIMEOUT_SIG, 0U)</code>
    </operation>
-   <statechart properties="0x00">
+   <statechart properties="0x02">
     <initial target="../1">
      <initial_glyph conn="70,3,5,0,18,3">
       <action box="0,-2,10,2"/>
@@ -107,7 +107,7 @@
     <documentation>Control constructor</documentation>
     <code>: QActive(Q_STATE_CAST(&amp;Control::initial))</code>
    </operation>
-   <statechart properties="0x00">
+   <statechart properties="0x02">
     <initial target="../1">
      <action brief="initial">m_busyMask = 0U;</action>
      <initial_glyph conn="70,3,5,0,3,6">
@@ -129,7 +129,7 @@
      </tran>
      <tran trig="TIMEOUT">
       <choice target="../../../2">
-       <guard brief="gaurd text">m_busyMask == 0U</guard>
+       <guard brief="no busy workers">m_busyMask == 0U</guard>
        <choice_glyph conn="83,25,5,0,38,15">
         <action box="1,0,23,2"/>
        </choice_glyph>
@@ -151,7 +151,16 @@
       </tran_glyph>
      </tran>
      <tran trig="BUCKET_TIPPED">
-      <action brief="Increment tip counter">m_bucketTips++;</action>
+      <action brief="Increment tip counter">m_bucketTips++;
+
+// send report
+
+auto *report = Q_NEW(SendReportEvt, SEND_REPORT_SIG);
+
+report-&gt;bucketTips   = m_bucketTips;
+report-&gt;bucketFaults = m_bucketFaults;
+
+AO_Radio-&gt;POST(report, this);</action>
       <tran_glyph conn="55,44,3,-1,29">
        <action box="0,-2,16,2"/>
       </tran_glyph>
@@ -159,7 +168,7 @@
      <tran trig="BUCKET_FAULT">
       <action>m_bucketFaults++;</action>
       <tran_glyph conn="55,50,3,-1,30">
-       <action box="0,-2,10,2"/>
+       <action box="0,-2,19,2"/>
       </tran_glyph>
      </tran>
      <state_glyph node="55,9,34,57"/>
@@ -175,31 +184,91 @@
   </attribute>
   <class name="Radio" superclass="qpcpp::QActive">
    <attribute name="instance" type="Radio" visibility="0x00" properties="0x01"/>
+   <attribute name="m_lastRadioError" type="int" visibility="0x02" properties="0x00"/>
+   <attribute name="m_reportBucketTips" type="uint64_t" visibility="0x02" properties="0x00"/>
+   <attribute name="m_reportBucketFaults" type="uint64_t" visibility="0x02" properties="0x00"/>
+   <attribute name="m_txTime" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
+   <attribute name="m_sequence" type="uint32_t" visibility="0x02" properties="0x00"/>
+   <attribute name="m_txPacket" type="Telemetry::TelemetryPacket" visibility="0x00" properties="0x00"/>
    <operation name="Radio" type="" visibility="0x00" properties="0x00">
     <documentation>constructor</documentation>
-    <code>: QActive(Q_STATE_CAST(&amp;Radio::initial))</code>
+    <code>: QActive(Q_STATE_CAST(&amp;Radio::initial)),
+  m_txTimer(this, RADIO_TX_TIMEOUT_SIG, 0U),
+  m_sequence{0U},
+  m_txPacket{}</code>
    </operation>
-   <statechart properties="0x00">
+   <operation name="prepareAndStartTransmission" type="int16_t" visibility="0x02" properties="0x00">
+    <code>// Prepare the Radio-owned transmission buffer.
+    // It remains valid throughout the asynchronous transmission.
+    m_txPacket = {};
+
+    m_txPacket.magic    = Telemetry::MAGIC;
+    m_txPacket.version  = Telemetry::VERSION;
+    m_txPacket.node_id  = NODE_ID;
+    m_txPacket.msg_type = Telemetry::MSG_REPORT;
+
+    // Sequence number is advanced after successful TX completion.
+    m_txPacket.seq       = m_sequence;
+    m_txPacket.uptime_ms = millis();
+
+    // Placeholder measurements for the first end-to-end test.
+    m_txPacket.temp_c_x100 = 0;
+    m_txPacket.supply_mv   = 0;
+    m_txPacket.battery_mv  = 0;
+    m_txPacket.wake_reason = 0;
+
+    // CRC covers the first 19 bytes of the packet.
+    Telemetry::updateCrc(m_txPacket);
+
+    // Initiate asynchronous transmission.
+    return BSP::radioStartTransmit(
+        reinterpret_cast&lt;uint8_t const *&gt;(&amp;m_txPacket),
+        sizeof(m_txPacket)
+    );
+</code>
+   </operation>
+   <statechart properties="0x02">
     <initial target="../3/0">
      <initial_glyph conn="80,6,5,0,3,13">
       <action box="0,-2,10,2"/>
      </initial_glyph>
     </initial>
     <state name="Idle">
-     <tran trig="SEND_REPORT" target="../../3/1">
-      <tran_glyph conn="23,31,2,3,7,41">
-       <action box="11,5,14,2"/>
+     <tran trig="SEND_REPORT">
+      <action brief="initiate transmission">auto const *report =
+    static_cast&lt;SendReportEvt const *&gt;(e);
+
+m_reportBucketTips   = report-&gt;bucketTips;
+m_reportBucketFaults = report-&gt;bucketFaults;
+
+m_lastRadioError = prepareAndStartTransmission();
+
+</action>
+      <choice target="../../../3/1">
+       <guard brief="OK">m_lastRadioError == RADIOLIB_ERR_NONE</guard>
+       <choice_glyph conn="29,20,4,3,16,34,3,1">
+        <action box="1,4,10,2"/>
+       </choice_glyph>
+      </choice>
+      <choice target="../../../2">
+       <guard brief="error">else</guard>
+       <choice_glyph conn="29,20,4,3,2,-7,22,3">
+        <action box="-13,5,10,2"/>
+       </choice_glyph>
+      </choice>
+      <tran_glyph conn="12,20,3,-1,17">
+       <action box="1,-3,14,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph node="11,25,24,6"/>
+     <state_glyph node="12,11,24,19"/>
     </state>
     <state name="Fault">
      <tran trig="CONTINUE" target="../../1">
-      <tran_glyph conn="23,44,3,3,-16,-16,4">
+      <tran_glyph conn="25,47,3,3,-16,-20,3">
        <action box="-13,-4,13,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph node="23,40,19,6"/>
+     <state_glyph node="25,43,19,6"/>
     </state>
     <state name="Busy">
      <entry brief="flag busy">// Busy entry
@@ -209,25 +278,59 @@ AO_Control-&gt;POST(&amp;radioBusyEvt, this);
 // Busy exit
 AO_Control-&gt;POST(&amp;radioIdleEvt, this);</exit>
      <state name="Initialising">
-      <tran trig="CONTINUE" target="../../../1">
-       <tran_glyph conn="84,27,2,1,1,-49">
-        <action box="-41,-1,10,2"/>
+      <entry brief="Initialise hardware and continue">m_lastRadioError = BSP::radioInit();
+this-&gt;POST_LIFO(&amp;continueEvt, this);</entry>
+      <tran trig="CONTINUE">
+       <choice target="../../../../1">
+        <guard brief="init OK">m_lastRadioError == RADIOLIB_ERR_NONE</guard>
+        <action brief="Increment sequence">m_sequence++;</action>
+        <choice_glyph conn="88,26,4,1,4,-50,-2,-2">
+         <action box="-14,2,10,2"/>
+        </choice_glyph>
+       </choice>
+       <choice target="../../../../2">
+        <guard brief="error">else</guard>
+        <choice_glyph conn="88,26,5,2,28,42,-86,-19">
+         <action box="1,0,10,2"/>
+        </choice_glyph>
+       </choice>
+       <tran_glyph conn="66,26,5,-1,22">
+        <action box="4,-2,10,2"/>
        </tran_glyph>
       </tran>
-      <state_glyph node="66,19,32,8"/>
+      <state_glyph node="66,19,32,12">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
      </state>
      <state name="Transmitting">
-      <tran trig="RADIO_TX_DONE" target="../../../1">
-       <tran_glyph conn="97,39,1,2,13,-6,-79,-2">
-        <action box="-53,-8,18,2"/>
+      <entry>m_txTimer.armX(TX_TIMEOUT_TICKS);</entry>
+      <tran trig="RADIO_TX_DONE">
+       <action>m_txTimer.disarm();
+m_lastRadioError = radio.finishTransmit();</action>
+       <choice target="../../../../1">
+        <guard brief="OK">m_lastRadioError == RADIOLIB_ERR_NONE</guard>
+        <choice_glyph conn="82,44,5,2,20,-12,-68,-2">
+         <action box="4,-3,10,2"/>
+        </choice_glyph>
+       </choice>
+       <choice target="../../../../2">
+        <guard brief="error">else</guard>
+        <choice_glyph conn="82,44,4,1,4,-36,-2,-2">
+         <action box="-10,2,10,2"/>
+        </choice_glyph>
+       </choice>
+       <tran_glyph conn="64,44,3,-1,18">
+        <action box="2,-2,18,2"/>
        </tran_glyph>
       </tran>
-      <tran trig="TIMEOUT" target="../../../2">
-       <tran_glyph conn="81,42,2,2,11,-47,-7">
-        <action box="-44,8,13,2"/>
+      <tran trig="RADIO_TX_TIMEOUT" target="../../../2">
+       <tran_glyph conn="81,51,2,2,11,-45,-13">
+        <action box="-44,8,18,2"/>
        </tran_glyph>
       </tran>
-      <state_glyph node="64,36,33,6"/>
+      <state_glyph node="64,36,33,15">
+       <entry box="1,2,6,2"/>
+      </state_glyph>
      </state>
      <state_glyph node="59,12,49,49">
       <entry box="1,2,13,2"/>
@@ -241,10 +344,17 @@ AO_Control-&gt;POST(&amp;radioIdleEvt, this);</exit>
    <code>= &amp;Radio::instance;</code>
   </attribute>
  </package>
+ <package name="Events" stereotype="0x01">
+  <class name="SendReportEvt" superclass="qpcpp::QEvt">
+   <attribute name="bucketTips" type="uint64_t" visibility="0x00" properties="0x00"/>
+   <attribute name="bucketFaults" type="uint64_t" visibility="0x00" properties="0x00"/>
+  </class>
+ </package>
  <directory name=".">
   <directory name="generated">
    <file name="bsp.hpp">
-    <text>#define BSP_HPP
+    <text>#ifndef BSP_HPP
+#define BSP_HPP
 
 #include &lt;Arduino.h&gt;
 #include &quot;qpcpp.hpp&quot;
@@ -258,8 +368,16 @@ public:
     enum { TICKS_PER_SEC = 100 }; // numer of clock ticks in a second
     static void init(void);
     static void terminate(int16_t);
-    static void start(void)
+    static void start(void);
     static void goToSleep(void);
+    static int16_t radioInit();
+    static int16_t radioStartTransmit(
+        uint8_t const *data,
+        size_t length
+    );
+
+    static int16_t radioFinishTransmit();
+    
 };
 
 enum RainGaugeSignals {
@@ -273,6 +391,7 @@ enum RainGaugeSignals {
     BUCKET_BUSY_SIG,
     RADIO_IDLE_SIG,
     RADIO_BUSY_SIG,
+    RADIO_TX_TIMEOUT_SIG,
     MAX_SIG
 };
 
@@ -289,7 +408,9 @@ enum UserQSRecords {
 
 // active object(s) used in this application -------------------------------
 $declare${AOs::AO_TippingBucket}
-#endif // BSP_HPP</text>
+$declare${AOs::AO_Radio}
+#endif // BSP_HPP
+</text>
    </file>
    <file name="tippingBucket.cpp">
     <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
@@ -343,255 +464,406 @@ static constexpr std::uint8_t RADIO_BUSY          = 1U &lt;&lt; 1;
 $define${AOs::Control}</text>
    </file>
    <file name="bsp.cpp">
-    <text>#include &quot;dpp.hpp&quot;     // DPP application
-#include &quot;bsp.hpp&quot;     // Board Support Package
-#include &lt;Arduino.h&gt;
-#include &quot;esp_freertos_hooks.h&quot;
+    <text>#include &quot;bsp.hpp&quot;
 
-#ifndef LED_BUILTIN  //If current ESP32 board does not define LED_BUILTIN
-static constexpr unsigned LED_BUILTIN=13U; 
+#include &lt;Arduino.h&gt;
+
+#include &quot;qpcpp.hpp&quot;
+#ifdef Q_SPY
+#include &quot;qs.hpp&quot;
 #endif
 
-using namespace QP;
+#include &quot;qf_port.hpp&quot;  // for POST_FROM_ISR
 
-//............................................................................
-// QS facilities
+#include &lt;SPI.h&gt;
+#include &lt;RadioLib.h&gt;
 
-// un-comment if QS instrumentation needed
-//#define QS_ON
+// define serial stream for QSPY
+#ifdef Q_SPY
+#ifdef LILYGO_T3
+static HardwareSerial&amp; qsSerial = Serial;
+#else
+static HardwareSerial&amp; qsSerial = Serial2;
+#endif
+#endif
 
-enum AppRecords { // application-specific QS trace records
-    PHILO_STAT = QP::QS_USER,
+// flash the onboard led as an out-of-band diagnostic tool
+static void checkpoint(unsigned n) {
+    for (unsigned i = 0; i &lt; n; ++i) {
+        digitalWrite(LED_PIN, HIGH);
+        delay(80);
+        digitalWrite(LED_PIN, LOW);
+        delay(80);
+    }
+    delay(400);
+}
+
+// LilyGO T3 V1.6.1 — SX1276
+//
+// NSS   GPIO 18
+// DIO0  GPIO 26
+// RESET GPIO 23
+// DIO1  GPIO 33
+
+namespace {
+
+SX1276 radio = new Module(18, 26, 23, 33);
+
+} // anonymous namespace
+
+
+// ============================== ISR Handling ================================
+
+
+// Reusable event: ISR -&gt; Raiod AO
+
+static QP::QEvt const radioTxDoneEvt{RADIO_TX_DONE_SIG, 0U, 0U};
+
+
+static void IRAM_ATTR radioDio0ISR()
+{
+    QACTIVE_POST_FROM_ISR(
+        AO_Radio,
+        &amp;radioTxDoneEvt,
+        nullptr
+    );
+}
+
+// Reusable event: ISR -&gt; TippingBucket AO
+static QP::QEvt const bucketSwitchClosingEvt{
+    BUCKET_SWITCH_CLOSING_SIG, 0U, 0U
 };
 
-static QP::QSpyId const l_TIMER_ID = { 0U }; // QSpy source ID
-
-//----------------------------------------------------------------------------
-// BSP functions
-
-static void tickHook_ESP32(void); /*Tick hook for QP */
-
-static void tickHook_ESP32(void)
+// GPIO interrupt callback
+static void IRAM_ATTR bucketReedSwitchISR()
+static void IRAM_ATTR bucketReedSwitchISR()
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    /* process time events for rate 0 */
-    QF::TICK_FROM_ISR(&amp;xHigherPriorityTaskWoken, &amp;l_TIMER_ID);
-    /* notify FreeRTOS to perform context switch from ISR, if needed */
-    if(xHigherPriorityTaskWoken) {
+
+    AO_TippingBucket-&gt;POST_FROM_ISR(
+        &amp;bucketSwitchClosingEvt,
+        &amp;xHigherPriorityTaskWoken,
+        nullptr
+    );
+
+    if (xHigherPriorityTaskWoken != pdFALSE) {
         portYIELD_FROM_ISR();
     }
-#ifndef QS_ON
-    if (Serial.available() &gt; 0) {
-        switch (Serial.read()) { // read the incoming byte
-            case 'p':
-            case 'P':
-                static QEvt const pauseEvt = { PAUSE_SIG, 0U, 0U};
-                QF::PUBLISH(&amp;pauseEvt, &amp;l_TIMER_ID);
-                break;
-            case 's':
-            case 'S':
-                static QEvt const serveEvt = { SERVE_SIG, 0U, 0U};
-                QF::PUBLISH(&amp;serveEvt, &amp;l_TIMER_ID);
-                break;
-        }
-    }
-#endif
 }
 
-void BSP::init(void) {
-    // initialize the hardware used in this sketch...
-    // NOTE: interrupts are configured and started later in QF::onStartup()
-    pinMode(LED_BUILTIN, OUTPUT);
-    randomSeed(1234); // seed the Random Number Generator
-    Serial.begin(115200); // set the highest stanard baud rate of 115200 bps
-    QS_INIT(nullptr);
-#ifdef QS_ON
-    // output QS dictionaries
-    QS_OBJ_DICTIONARY(&amp;l_TIMER_ID);
-    QS_USR_DICTIONARY(PHILO_STAT);
+#ifdef Q_SPY
+// ====================== QSpy ===================================
+//
 
-    // setup the QS filters...
-    QS_GLB_FILTER(QP::QS_SM_RECORDS); // state machine records
-    QS_GLB_FILTER(QP::QS_AO_RECORDS); // active object records
-    QS_GLB_FILTER(QP::QS_UA_RECORDS); // all user records
-#else
-    Serial.print(&quot;QP-C++: &quot;);
-    Serial.print(QP_VERSION_STR);
-    Serial.println(&quot;&quot;);
-#endif
-}
-//............................................................................
-void BSP::displayPhilStat(uint8_t n, char_t const *stat) {
-#ifdef QS_ON
-    QS_BEGIN_ID(PHILO_STAT, AO_Philo[n]-&gt;m_prio) // app-specific record begin
-        QS_U8(1, n);  // Philo number
-        QS_STR(stat); // Philo status
-    QS_END()
-#else
-    Serial.print(&quot;Philosopher &quot;);
-    Serial.write(48+n);
-    Serial.print(&quot; &quot;);
-    Serial.println(stat);
-#endif
-}
-//............................................................................
-void BSP::displayPaused(uint8_t paused) {
-    char const *msg = paused ? &quot;Paused ON&quot; : &quot;Paused OFF&quot;;
-#ifndef QS_ON
-    Serial.println(msg);
-#endif
-}
-//............................................................................
-void BSP::ledOff(void) {
-    digitalWrite(LED_BUILTIN, LOW);
-}
-//............................................................................
-void BSP::ledOn(void) {
-    digitalWrite(LED_BUILTIN, HIGH);
-}
+bool QP::QS::onStartup(void const* arg) {
+    static uint8_t qsTxBuf[16 * 1024];
+    static uint8_t qsRxBuf[128];
 
-//............................................................................
-static uint32_t l_rnd; // random seed
-
-void BSP::randomSeed(uint32_t seed) {
-    l_rnd = seed;
-}
-//............................................................................
-uint32_t BSP::random(void) { // a very cheap pseudo-random-number generator
-    // &quot;Super-Duper&quot; Linear Congruential Generator (LCG)
-    // LCG(2^32, 3*7*11*13*23, 0, seed)
-    //
-    uint32_t rnd = l_rnd * (3U*7U*11U*13U*23U);
-    l_rnd = rnd; // set for the next time
-    return (rnd &gt;&gt; 8);
-}
-
-//............................................................................
-void QSpy_Task(void *) {
-  while(1)
-  {
-    // transmit QS outgoing data (QS-TX)
-    uint16_t len = Serial.availableForWrite();
-    if (len &gt; 0U) { // any space available in the output buffer?
-        uint8_t const *buf = QS::getBlock(&amp;len);
-        if (buf) {
-            Serial.write(buf, len); // asynchronous and non-blocking
-        }
-    }
-
-    // receive QS incoming data (QS-RX)
-    len = Serial.available();
-    if (len &gt; 0U) {
-        do {
-            QP::QS::rxPut(Serial.read());
-        } while (--len &gt; 0U);
-        QS::rxParse();
-    }
-    delay(100);
-  };
-}
-
-void QF::onStartup(void) {
-    esp_register_freertos_tick_hook_for_cpu(tickHook_ESP32, QP_CPU_NUM);
-#ifdef QS_ON
-    xTaskCreatePinnedToCore(
-                    QSpy_Task,   /* Function to implement the task */
-                    &quot;QSPY&quot;, /* Name of the task */
-                    10000,      /* Stack size in words */
-                    NULL,       /* Task input parameter */
-                    configMAX_PRIORITIES-1,          /* Priority of the task */
-                    NULL,       /* Task handle. */
-                    QP_CPU_NUM);  /* Core where the task should run */
-#endif
-}
-//............................................................................
-
-//............................................................................
-extern &quot;C&quot; Q_NORETURN Q_onAssert(char const * const module, int location) {
-    //
-    // NOTE: add here your application-specific error handling
-    //
-    (void)module;
-    (void)location;
-    Serial.print(&quot;QP Assert module:&quot;);
-    Serial.print(module);
-    Serial.print(&quot;,&quot;);
-    Serial.println(location);
-    QF_INT_DISABLE(); // disable all interrupts
-    for (;;) { // sit in an endless loop for now
-    }
-}
-
-//----------------------------------------------------------------------------
-// QS callbacks...
-//............................................................................
-bool QP::QS::onStartup(void const * arg) {
-    static uint8_t qsTxBuf[1024]; // buffer for QS transmit channel (QS-TX)
-    static uint8_t qsRxBuf[128];  // buffer for QS receive channel (QS-RX)
-    initBuf  (qsTxBuf, sizeof(qsTxBuf));
+    initBuf(qsTxBuf, sizeof(qsTxBuf));
     rxInitBuf(qsRxBuf, sizeof(qsRxBuf));
-    return true; // return success
+
+    attachInterrupt(
+        digitalPinToInterrupt(BUCKET_PIN),
+        bucketReedSwitchISR,
+        FALLING
+    );
+
+    return true;
 }
-//............................................................................
-void QP::QS::onCommand(uint8_t cmdId, uint32_t param1,
-                       uint32_t param2, uint32_t param3)
-{
+
+void QP::QS::onCleanup(void) {}
+
+void QP::QS::onCommand(uint8_t cmdId, uint32_t param1, uint32_t param2,
+                       uint32_t param3) {}
+
+QP::QSTimeCtr QP::QS::onGetTime(void) { return millis(); }
+
+static void qsDrainTask(void* arg) {
+    (void)arg;
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    for (;;) {
+        uint16_t n = 256U;
+        uint8_t const* block;
+
+        QS_CRIT_STAT_
+        QS_CRIT_E_();
+        block = QP::QS::getBlock(&amp;n);
+        QS_CRIT_X_();
+
+        if ((block != nullptr) &amp;&amp; (n != 0U)) {
+            qsSerial.write(block, n);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
 }
-//............................................................................
-void QP::QS::onCleanup(void) {
-}
-//............................................................................
-QP::QSTimeCtr QP::QS::onGetTime(void) {
-#ifdef QS_ON
-    return millis();
-#else
-    return 0;
+
+void QP::QS::onReset(void) { esp_restart(); }
 #endif
 
-}
-//............................................................................
-void QP::QS::onFlush(void) {
-#ifdef QS_ON
-    uint16_t len = 0xFFFFU; // big number to get as many bytes as available
-    uint8_t const *buf = QS::getBlock(&amp;len); // get continguous block of data
-    while (buf != nullptr) { // data available?
-        Serial.write(buf, len); // might poll until all bytes fit
-        len = 0xFFFFU; // big number to get as many bytes as available
-        buf = QS::getBlock(&amp;len); // try to get more data
+// =============================== END QSPY ===================================
+
+void BSP::init() {
+    // Open serial ports
+    // TODO: for stable tooling, we need to confirm these /dev/ttyUSBn mappings
+    // and ensure they don't change.
+
+
+    pinMode(BUCKET_PIN, INPUT_PULLUP);
+    digitalWrite(LED_PIN, LOW);
+
+#ifdef Q_SPY
+#ifdef LILYGO_T3
+    qsSerial.begin(115200);
+#else
+    qsSerial.begin(921600, SERIAL_8N1, 16, 17);
+#endif
+    while (!qsSerial) {  // -- maps to /dev/ttyESP32_CONSOLE
     }
-    Serial.flush(); // wait for the transmission of outgoing data to complete
-#endif // QS_ON
+#else
+    // QSPY not active, define default serial port
+    Serial.begin(115200);
+    while (!Serial) {
+    }
+#endif
+
+#ifdef Q_SPY
+
+    QS_INIT(nullptr);
+
+#include &quot;qs_dict.inc&quot;
+
+    QS_GLB_FILTER(-QP::QS_ALL_RECORDS);
+
+    QS_GLB_FILTER(QP::QS_QEP_TRAN);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_ENTRY);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_EXIT);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_INIT);
+
+    QS_GLB_FILTER(QS_BOOT);
+    QS_GLB_FILTER(QS_ASSERT);
+    QS_GLB_FILTER(QS_ERROR);
+    QS_GLB_FILTER(QS_USER_BUTTON);
+    QS_GLB_FILTER(QS_BUTTON_BOUNCE);
+
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;BSP::init: QS online&quot;);
+    QS_END()
+
+    // start the QS buffer draining task
+    //
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;Starting the qsDrainTask&quot;);
+    QS_END()
+
+    xTaskCreatePinnedToCore(qsDrainTask, &quot;QS&quot;, 4096, nullptr, 1, nullptr, 1);
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;qsDrainTask started&quot;);
+    QS_END()
+
+#endif
+
+    // Initialise LED pin
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;Initialising LED and BUTTON&quot;);
+    QS_END()
+#endif
+    // initialise the button pin
+
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+// =========== ISR ==========
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;Configuring BUTTON interrupt&quot;);
+    QS_END()
+#endif
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR(&quot;BUTTON interrupt configured&quot;);
+    QS_END()
+#endif
 }
-//............................................................................
-void QP::QS::onReset(void) {
-    esp_restart(); 
+
+void BSP::start() {}
+
+void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
+
+void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
+
+void BSP::terminate(int16_t) {
+    for (;;) {
+        delay(100);
+    }
 }
-</text>
+
+bool BSP::buttonPressed(void) { return digitalRead(BUTTON_PIN) == LOW; }
+
+extern &quot;C&quot; void Q_onError(char const* const module, int_t const id) {
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_ERROR, 0U)
+    QS_STR(module);
+    QS_I32(0U, id);
+    QS_END()
+
+    QP::QS::onFlush();
+#endif
+
+    for (;;) {
+        delay(100);
+    }
+}
+
+
+int16_t BSP::radioInit() {
+
+    // LilyGO T3 V1.6.1 SPI wiring:
+    // SCK=5, MISO=19, MOSI=27, SS=18
+    SPI.begin(5, 19, 27, 18);
+
+    // Initialise the SX1276 at 915 MHz.
+    int16_t status = radio.begin(915.0);
+
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    // Match the working E1 experiment.
+
+    status = radio.setBandwidth(125.0);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setSpreadingFactor(7);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setCodingRate(5);  // 4/5
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setOutputPower(12);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    // register the ISR
+
+    radio.setDio0Action(radioDio0ISR, RISING);
+
+    return RADIOLIB_ERR_NONE;
+}
+
+
+static BSP::int16_t BSP::radioStartTransmit(
+    uint8_t const *data,
+    size_t length
+) {
+    return radio.startTransmit(data, length);
+}
+
+static int16_t BSP::radioFinishTransmit() {
+    return radio.finishTransmit();
+}
+
+void assert_failed(char const* const module, int_t const id) {
+    Q_onError(module, id);
+}
+
+namespace QP {
+
+void QF::onStartup() {}
+
+void QF::onCleanup() {}
+
+void QP::QS::onFlush() {
+#ifdef Q_SPY
+    for (;;) {
+        uint16_t n = 256U;
+        uint8_t const* block;
+
+        QS_CRIT_STAT_
+        QS_CRIT_E_();
+        block = QP::QS::getBlock(&amp;n);
+        QS_CRIT_X_();
+
+        if (block == nullptr) {
+            break;
+        }
+
+        qsSerial.write(block, n);
+    }
+
+    qsSerial.flush();
+#endif
+}
+
+}  // namespace QP
+
+extern &quot;C&quot; void Q_onIdle(void) {
+    QF_INT_ENABLE();
+
+#ifdef Q_SPY
+    QP::QS::rxParse();
+#endif
+}
+
+extern &quot;C&quot; void Q_onAssert(char const* const module, int_t const id) {
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_ASSERT, 0U)
+    QS_STR(module);
+    QS_I32(0U, id);
+    QS_END()
+
+    QP::QS::onFlush();
+#endif
+
+    for (;;) {
+        delay(100);
+    }
+}</text>
    </file>
    <file name="radio.cpp">
-    <text>#include &quot;qpcpp.hpp&quot; // QP/C++ framework API
-#include &quot;bsp.hpp&quot;   // Board Support Package interface
+    <text>#include &quot;qpcpp.hpp&quot;  // QP/C++ framework API
+#include &quot;bsp.hpp&quot;    // Board Support Package interface
+#include &quot;events.hpp&quot; // QM-generated application event classes
+#include &quot;telemetry_protocol.hpp&quot;
 
+// Reusable events posted by Radio to Control
+static QP::QEvt const radioBusyEvt{RADIO_BUSY_SIG, 0U, 0U};
+static QP::QEvt const radioIdleEvt{RADIO_IDLE_SIG, 0U, 0U};
 
-
-// reusable event instances associated with  the Control AO
-
-// static QP::QEvt const bucketBusyEvt{TIPPING_BUCKET_BUSY, 0U, 0U};
-// static QP::QEvt const bucketIdleEvt{TIPPING_BUCKET_IDLE, 0U, 0U};
 
 using namespace QP;
 
-// ask QM to declare the Radio  class ----------------------------------------
+// Radio class declaration
 $declare${AOs::Radio}
 
-// opaque pointer to the Radio active object --------------------------------
+// Opaque pointer to the Radio active object
 $define${AOs::AO_Radio}
 
-
-
-
-// ask QM to define the Control class (including the state machine) -----------
+// Radio class and state-machine implementation
 $define${AOs::Radio}</text>
+   </file>
+   <file name="events.hpp">
+    <text>#ifndef EVENTS_HPP
+#define EVENTS_HPP
+
+#include &lt;cstdint&gt;
+#include &quot;qpcpp.hpp&quot;
+
+// QM-generated application event classes
+
+$declare${Events::SendReportEvt}
+
+#endif // EVENTS_HPP</text>
    </file>
   </directory>
  </directory>

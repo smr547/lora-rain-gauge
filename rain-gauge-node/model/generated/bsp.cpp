@@ -28,227 +28,368 @@
 // <info@state-machine.com>
 //
 //$endhead${.::generated::bsp.cpp} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#include "dpp.hpp"     // DPP application
-#include "bsp.hpp"     // Board Support Package
-#include <Arduino.h>
-#include "esp_freertos_hooks.h"
+#include "bsp.hpp"
 
-#ifndef LED_BUILTIN  //If current ESP32 board does not define LED_BUILTIN
-static constexpr unsigned LED_BUILTIN=13U;
+#include <Arduino.h>
+
+#include "qpcpp.hpp"
+#ifdef Q_SPY
+#include "qs.hpp"
 #endif
 
-using namespace QP;
+#include "qf_port.hpp"  // for POST_FROM_ISR
 
-//............................................................................
-// QS facilities
+#include <SPI.h>
+#include <RadioLib.h>
 
-// un-comment if QS instrumentation needed
-//#define QS_ON
+// define serial stream for QSPY
+#ifdef Q_SPY
+#ifdef LILYGO_T3
+static HardwareSerial& qsSerial = Serial;
+#else
+static HardwareSerial& qsSerial = Serial2;
+#endif
+#endif
 
-enum AppRecords { // application-specific QS trace records
-    PHILO_STAT = QP::QS_USER,
+// flash the onboard led as an out-of-band diagnostic tool
+static void checkpoint(unsigned n) {
+    for (unsigned i = 0; i < n; ++i) {
+        digitalWrite(LED_PIN, HIGH);
+        delay(80);
+        digitalWrite(LED_PIN, LOW);
+        delay(80);
+    }
+    delay(400);
+}
+
+// LilyGO T3 V1.6.1 — SX1276
+//
+// NSS   GPIO 18
+// DIO0  GPIO 26
+// RESET GPIO 23
+// DIO1  GPIO 33
+
+namespace {
+
+SX1276 radio = new Module(18, 26, 23, 33);
+
+} // anonymous namespace
+
+
+// ============================== ISR Handling ================================
+
+
+// Reusable event: ISR -> Raiod AO
+
+static QP::QEvt const radioTxDoneEvt{RADIO_TX_DONE_SIG, 0U, 0U};
+
+
+static void IRAM_ATTR radioDio0ISR()
+{
+    QACTIVE_POST_FROM_ISR(
+        AO_Radio,
+        &radioTxDoneEvt,
+        nullptr
+    );
+}
+
+// Reusable event: ISR -> TippingBucket AO
+static QP::QEvt const bucketSwitchClosingEvt{
+    BUCKET_SWITCH_CLOSING_SIG, 0U, 0U
 };
 
-static QP::QSpyId const l_TIMER_ID = { 0U }; // QSpy source ID
-
-//----------------------------------------------------------------------------
-// BSP functions
-
-static void tickHook_ESP32(void); /*Tick hook for QP */
-
-static void tickHook_ESP32(void)
+// GPIO interrupt callback
+static void IRAM_ATTR bucketReedSwitchISR()
+static void IRAM_ATTR bucketReedSwitchISR()
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    /* process time events for rate 0 */
-    QF::TICK_FROM_ISR(&xHigherPriorityTaskWoken, &l_TIMER_ID);
-    /* notify FreeRTOS to perform context switch from ISR, if needed */
-    if(xHigherPriorityTaskWoken) {
+
+    AO_TippingBucket->POST_FROM_ISR(
+        &bucketSwitchClosingEvt,
+        &xHigherPriorityTaskWoken,
+        nullptr
+    );
+
+    if (xHigherPriorityTaskWoken != pdFALSE) {
         portYIELD_FROM_ISR();
     }
-#ifndef QS_ON
-    if (Serial.available() > 0) {
-        switch (Serial.read()) { // read the incoming byte
-            case 'p':
-            case 'P':
-                static QEvt const pauseEvt = { PAUSE_SIG, 0U, 0U};
-                QF::PUBLISH(&pauseEvt, &l_TIMER_ID);
-                break;
-            case 's':
-            case 'S':
-                static QEvt const serveEvt = { SERVE_SIG, 0U, 0U};
-                QF::PUBLISH(&serveEvt, &l_TIMER_ID);
-                break;
-        }
-    }
-#endif
 }
 
-void BSP::init(void) {
-    // initialize the hardware used in this sketch...
-    // NOTE: interrupts are configured and started later in QF::onStartup()
-    pinMode(LED_BUILTIN, OUTPUT);
-    randomSeed(1234); // seed the Random Number Generator
-    Serial.begin(115200); // set the highest stanard baud rate of 115200 bps
-    QS_INIT(nullptr);
-#ifdef QS_ON
-    // output QS dictionaries
-    QS_OBJ_DICTIONARY(&l_TIMER_ID);
-    QS_USR_DICTIONARY(PHILO_STAT);
+#ifdef Q_SPY
+// ====================== QSpy ===================================
+//
 
-    // setup the QS filters...
-    QS_GLB_FILTER(QP::QS_SM_RECORDS); // state machine records
-    QS_GLB_FILTER(QP::QS_AO_RECORDS); // active object records
-    QS_GLB_FILTER(QP::QS_UA_RECORDS); // all user records
-#else
-    Serial.print("QP-C++: ");
-    Serial.print(QP_VERSION_STR);
-    Serial.println("");
-#endif
-}
-//............................................................................
-void BSP::displayPhilStat(uint8_t n, char_t const *stat) {
-#ifdef QS_ON
-    QS_BEGIN_ID(PHILO_STAT, AO_Philo[n]->m_prio) // app-specific record begin
-        QS_U8(1, n);  // Philo number
-        QS_STR(stat); // Philo status
-    QS_END()
-#else
-    Serial.print("Philosopher ");
-    Serial.write(48+n);
-    Serial.print(" ");
-    Serial.println(stat);
-#endif
-}
-//............................................................................
-void BSP::displayPaused(uint8_t paused) {
-    char const *msg = paused ? "Paused ON" : "Paused OFF";
-#ifndef QS_ON
-    Serial.println(msg);
-#endif
-}
-//............................................................................
-void BSP::ledOff(void) {
-    digitalWrite(LED_BUILTIN, LOW);
-}
-//............................................................................
-void BSP::ledOn(void) {
-    digitalWrite(LED_BUILTIN, HIGH);
-}
+bool QP::QS::onStartup(void const* arg) {
+    static uint8_t qsTxBuf[16 * 1024];
+    static uint8_t qsRxBuf[128];
 
-//............................................................................
-static uint32_t l_rnd; // random seed
-
-void BSP::randomSeed(uint32_t seed) {
-    l_rnd = seed;
-}
-//............................................................................
-uint32_t BSP::random(void) { // a very cheap pseudo-random-number generator
-    // "Super-Duper" Linear Congruential Generator (LCG)
-    // LCG(2^32, 3*7*11*13*23, 0, seed)
-    //
-    uint32_t rnd = l_rnd * (3U*7U*11U*13U*23U);
-    l_rnd = rnd; // set for the next time
-    return (rnd >> 8);
-}
-
-//............................................................................
-void QSpy_Task(void *) {
-  while(1)
-  {
-    // transmit QS outgoing data (QS-TX)
-    uint16_t len = Serial.availableForWrite();
-    if (len > 0U) { // any space available in the output buffer?
-        uint8_t const *buf = QS::getBlock(&len);
-        if (buf) {
-            Serial.write(buf, len); // asynchronous and non-blocking
-        }
-    }
-
-    // receive QS incoming data (QS-RX)
-    len = Serial.available();
-    if (len > 0U) {
-        do {
-            QP::QS::rxPut(Serial.read());
-        } while (--len > 0U);
-        QS::rxParse();
-    }
-    delay(100);
-  };
-}
-
-void QF::onStartup(void) {
-    esp_register_freertos_tick_hook_for_cpu(tickHook_ESP32, QP_CPU_NUM);
-#ifdef QS_ON
-    xTaskCreatePinnedToCore(
-                    QSpy_Task,   /* Function to implement the task */
-                    "QSPY", /* Name of the task */
-                    10000,      /* Stack size in words */
-                    NULL,       /* Task input parameter */
-                    configMAX_PRIORITIES-1,          /* Priority of the task */
-                    NULL,       /* Task handle. */
-                    QP_CPU_NUM);  /* Core where the task should run */
-#endif
-}
-//............................................................................
-
-//............................................................................
-extern "C" Q_NORETURN Q_onAssert(char const * const module, int location) {
-    //
-    // NOTE: add here your application-specific error handling
-    //
-    (void)module;
-    (void)location;
-    Serial.print("QP Assert module:");
-    Serial.print(module);
-    Serial.print(",");
-    Serial.println(location);
-    QF_INT_DISABLE(); // disable all interrupts
-    for (;;) { // sit in an endless loop for now
-    }
-}
-
-//----------------------------------------------------------------------------
-// QS callbacks...
-//............................................................................
-bool QP::QS::onStartup(void const * arg) {
-    static uint8_t qsTxBuf[1024]; // buffer for QS transmit channel (QS-TX)
-    static uint8_t qsRxBuf[128];  // buffer for QS receive channel (QS-RX)
-    initBuf  (qsTxBuf, sizeof(qsTxBuf));
+    initBuf(qsTxBuf, sizeof(qsTxBuf));
     rxInitBuf(qsRxBuf, sizeof(qsRxBuf));
-    return true; // return success
+
+    attachInterrupt(
+        digitalPinToInterrupt(BUCKET_PIN),
+        bucketReedSwitchISR,
+        FALLING
+    );
+
+    return true;
 }
-//............................................................................
-void QP::QS::onCommand(uint8_t cmdId, uint32_t param1,
-                       uint32_t param2, uint32_t param3)
-{
+
+void QP::QS::onCleanup(void) {}
+
+void QP::QS::onCommand(uint8_t cmdId, uint32_t param1, uint32_t param2,
+                       uint32_t param3) {}
+
+QP::QSTimeCtr QP::QS::onGetTime(void) { return millis(); }
+
+static void qsDrainTask(void* arg) {
+    (void)arg;
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    for (;;) {
+        uint16_t n = 256U;
+        uint8_t const* block;
+
+        QS_CRIT_STAT_
+        QS_CRIT_E_();
+        block = QP::QS::getBlock(&n);
+        QS_CRIT_X_();
+
+        if ((block != nullptr) && (n != 0U)) {
+            qsSerial.write(block, n);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
 }
-//............................................................................
-void QP::QS::onCleanup(void) {
-}
-//............................................................................
-QP::QSTimeCtr QP::QS::onGetTime(void) {
-#ifdef QS_ON
-    return millis();
-#else
-    return 0;
+
+void QP::QS::onReset(void) { esp_restart(); }
 #endif
 
-}
-//............................................................................
-void QP::QS::onFlush(void) {
-#ifdef QS_ON
-    uint16_t len = 0xFFFFU; // big number to get as many bytes as available
-    uint8_t const *buf = QS::getBlock(&len); // get continguous block of data
-    while (buf != nullptr) { // data available?
-        Serial.write(buf, len); // might poll until all bytes fit
-        len = 0xFFFFU; // big number to get as many bytes as available
-        buf = QS::getBlock(&len); // try to get more data
+// =============================== END QSPY ===================================
+
+void BSP::init() {
+    // Open serial ports
+    // TODO: for stable tooling, we need to confirm these /dev/ttyUSBn mappings
+    // and ensure they don't change.
+
+
+    pinMode(BUCKET_PIN, INPUT_PULLUP);
+    digitalWrite(LED_PIN, LOW);
+
+#ifdef Q_SPY
+#ifdef LILYGO_T3
+    qsSerial.begin(115200);
+#else
+    qsSerial.begin(921600, SERIAL_8N1, 16, 17);
+#endif
+    while (!qsSerial) {  // -- maps to /dev/ttyESP32_CONSOLE
     }
-    Serial.flush(); // wait for the transmission of outgoing data to complete
-#endif // QS_ON
-}
-//............................................................................
-void QP::QS::onReset(void) {
-    esp_restart();
+#else
+    // QSPY not active, define default serial port
+    Serial.begin(115200);
+    while (!Serial) {
+    }
+#endif
+
+#ifdef Q_SPY
+
+    QS_INIT(nullptr);
+
+#include "qs_dict.inc"
+
+    QS_GLB_FILTER(-QP::QS_ALL_RECORDS);
+
+    QS_GLB_FILTER(QP::QS_QEP_TRAN);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_ENTRY);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_EXIT);
+    QS_GLB_FILTER(QP::QS_QEP_STATE_INIT);
+
+    QS_GLB_FILTER(QS_BOOT);
+    QS_GLB_FILTER(QS_ASSERT);
+    QS_GLB_FILTER(QS_ERROR);
+    QS_GLB_FILTER(QS_USER_BUTTON);
+    QS_GLB_FILTER(QS_BUTTON_BOUNCE);
+
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("BSP::init: QS online");
+    QS_END()
+
+    // start the QS buffer draining task
+    //
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Starting the qsDrainTask");
+    QS_END()
+
+    xTaskCreatePinnedToCore(qsDrainTask, "QS", 4096, nullptr, 1, nullptr, 1);
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("qsDrainTask started");
+    QS_END()
+
+#endif
+
+    // Initialise LED pin
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Initialising LED and BUTTON");
+    QS_END()
+#endif
+    // initialise the button pin
+
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+// =========== ISR ==========
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("Configuring BUTTON interrupt");
+    QS_END()
+#endif
+    attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_BOOT, 0U)
+    QS_STR("BUTTON interrupt configured");
+    QS_END()
+#endif
 }
 
+void BSP::start() {}
+
+void BSP::ledOn() { digitalWrite(LED_PIN, HIGH); }
+
+void BSP::ledOff() { digitalWrite(LED_PIN, LOW); }
+
+void BSP::terminate(int16_t) {
+    for (;;) {
+        delay(100);
+    }
+}
+
+bool BSP::buttonPressed(void) { return digitalRead(BUTTON_PIN) == LOW; }
+
+extern "C" void Q_onError(char const* const module, int_t const id) {
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_ERROR, 0U)
+    QS_STR(module);
+    QS_I32(0U, id);
+    QS_END()
+
+    QP::QS::onFlush();
+#endif
+
+    for (;;) {
+        delay(100);
+    }
+}
+
+
+int16_t BSP::radioInit() {
+
+    // LilyGO T3 V1.6.1 SPI wiring:
+    // SCK=5, MISO=19, MOSI=27, SS=18
+    SPI.begin(5, 19, 27, 18);
+
+    // Initialise the SX1276 at 915 MHz.
+    int16_t status = radio.begin(915.0);
+
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    // Match the working E1 experiment.
+
+    status = radio.setBandwidth(125.0);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setSpreadingFactor(7);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setCodingRate(5);  // 4/5
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    status = radio.setOutputPower(12);
+    if (status != RADIOLIB_ERR_NONE) {
+        return status;
+    }
+
+    // register the ISR
+
+    radio.setDio0Action(radioDio0ISR, RISING);
+
+    return RADIOLIB_ERR_NONE;
+}
+
+
+static BSP::int16_t BSP::radioStartTransmit(
+    uint8_t const *data,
+    size_t length
+) {
+    return radio.startTransmit(data, length);
+}
+
+static int16_t BSP::radioFinishTransmit() {
+    return radio.finishTransmit();
+}
+
+void assert_failed(char const* const module, int_t const id) {
+    Q_onError(module, id);
+}
+
+namespace QP {
+
+void QF::onStartup() {}
+
+void QF::onCleanup() {}
+
+void QP::QS::onFlush() {
+#ifdef Q_SPY
+    for (;;) {
+        uint16_t n = 256U;
+        uint8_t const* block;
+
+        QS_CRIT_STAT_
+        QS_CRIT_E_();
+        block = QP::QS::getBlock(&n);
+        QS_CRIT_X_();
+
+        if (block == nullptr) {
+            break;
+        }
+
+        qsSerial.write(block, n);
+    }
+
+    qsSerial.flush();
+#endif
+}
+
+}  // namespace QP
+
+extern "C" void Q_onIdle(void) {
+    QF_INT_ENABLE();
+
+#ifdef Q_SPY
+    QP::QS::rxParse();
+#endif
+}
+
+extern "C" void Q_onAssert(char const* const module, int_t const id) {
+#ifdef Q_SPY
+    QS_BEGIN_ID(QS_ASSERT, 0U)
+    QS_STR(module);
+    QS_I32(0U, id);
+    QS_END()
+
+    QP::QS::onFlush();
+#endif
+
+    for (;;) {
+        delay(100);
+    }
+}

@@ -98,6 +98,10 @@ Control::Control()
 Q_STATE_DEF(Control, initial) {
     //${AOs::Control::SM::initial}
     m_busyMask = 0U;
+
+    QS_FUN_DICTIONARY(&Control::Running);
+    QS_FUN_DICTIONARY(&Control::Sleeping);
+
     return tran(&Running);
 }
 
@@ -119,7 +123,7 @@ Q_STATE_DEF(Control, Running) {
         }
         //${AOs::Control::SM::Running::TIMEOUT}
         case TIMEOUT_SIG: {
-            //${AOs::Control::SM::Running::TIMEOUT::[gaurdtext]}
+            //${AOs::Control::SM::Running::TIMEOUT::[nobusyworkers]}
             if (m_busyMask == 0U) {
                 status_ = tran(&Sleeping);
             }
@@ -143,6 +147,15 @@ Q_STATE_DEF(Control, Running) {
         //${AOs::Control::SM::Running::BUCKET_TIPPED}
         case BUCKET_TIPPED_SIG: {
             m_bucketTips++;
+
+            // send report
+
+            auto *report = Q_NEW(SendReportEvt, SEND_REPORT_SIG);
+
+            report->bucketTips   = m_bucketTips;
+            report->bucketFaults = m_bucketFaults;
+
+            AO_Radio->POST(report, this);
             status_ = Q_RET_HANDLED;
             break;
         }

@@ -97,6 +97,14 @@ TippingBucket::TippingBucket()
 //${AOs::TippingBucket::SM} ..................................................
 Q_STATE_DEF(TippingBucket, initial) {
     //${AOs::TippingBucket::SM::initial}
+
+    QS_FUN_DICTIONARY(&TippingBucket::Ready);
+    QS_FUN_DICTIONARY(&TippingBucket::Debouncing);
+    QS_FUN_DICTIONARY(&TippingBucket::ConfirmingClosed);
+    QS_FUN_DICTIONARY(&TippingBucket::WaitForOpen);
+    QS_FUN_DICTIONARY(&TippingBucket::BucketFault);
+    QS_FUN_DICTIONARY(&TippingBucket::ConfirmedTipped);
+
     return tran(&Ready);
 }
 
