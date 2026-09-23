@@ -82,7 +82,7 @@ def main():
         classes, triggers, qm_symbols = qm_facts(args.qm)
         signal_path = args.signals or args.collab.with_name("rain-gauge-signals.hpp")
         signal_text = signal_path.read_text(encoding="utf-8")
-        declared_signals = set(re.findall(r"\\b[A-Z][A-Z0-9_]*_SIG\\b", signal_text))
+        declared_signals = set(re.findall(r"\b[A-Z][A-Z0-9_]*_SIG\b", signal_text))
     except (OSError, ValueError, ET.ParseError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
