@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only, deliberately conservative Collab/QM architecture checker (v0.1).
+"""Read-only, deliberately conservative Collab/QM architecture checker (v0.2).
 
 The collaboration source is the design intent. QM is a work in progress.
 Missing implementations are warnings; malformed sources and demonstrable
@@ -15,24 +15,20 @@ AO = re.compile(r"^ao\s+(\w+)\s*$")
 START = re.compile(r"^collaboration\s+(\w+)\s+(\w+)\s*$")
 ROUTE = re.compile(r"^(\w+)\s*->\s*(\w+)\s*$")
 SIGNAL = re.compile(r"^[A-Z][A-Z0-9_]*$")
-# Explicit design-to-implementation aliases, not a naming heuristic.
-QM_CLASSES = {
-    "BucketSensorAO": "TippingBucket",
-    "ControlAO": "Control",
-    "RadioAO": "Radio",
-}
-ISR_PARTICIPANTS = {"BucketReedSwitchISR", "RadioDIO0ISR"}
 
 
 def parse_collab(path):
-    participants, routes, block, sender, receiver = set(), [], False, None, None
+    participants, routes, block, sender, receiver = {}, [], False, None, None
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
-        match = AO.fullmatch(line)
+        match = PARTICIPANT.fullmatch(line)
         if match and not block:
-            participants.add(match[1])
+            role, name = match.groups()
+            if name in participants:
+                raise ValueError(f"{path}:{number}: duplicate participant {name}")
+            participants[name] = role
             continue
         match = START.fullmatch(line)
         if match and not block:
@@ -80,7 +76,7 @@ def main():
     try:
         participants, routes = parse_collab(args.collab)
         classes, triggers, qm_symbols = qm_facts(args.qm)
-        signal_path = args.signals or args.collab.with_name("rain-gauge-signals.hpp")
+        signal_path = args.signals or args.collab.with_name(args.collab.stem + "-signals.hpp")
         signal_text = signal_path.read_text(encoding="utf-8")
         declared_signals = set(re.findall(r"\b[A-Z][A-Z0-9_]*_SIG\b", signal_text))
     except (OSError, ValueError, ET.ParseError) as exc:
@@ -99,21 +95,17 @@ def main():
             report("ERROR", f"collab:{line}: undeclared endpoint in {sender} -> {receiver}")
         if signal + "_SIG" not in declared_signals:
             report("ERROR", f"collab:{line}: {signal}_SIG missing from Collab-generated header")
-        implementation = QM_CLASSES.get(receiver)
-        if implementation in classes and signal not in triggers.get(implementation, set()):
-            report("WARNING", f"collab:{line}: {receiver} ({implementation}) has no QM transition for {signal}")
-    for participant in sorted(participants - ISR_PARTICIPANTS):
-        implementation = QM_CLASSES.get(participant)
-        if implementation is None:
-            report("WARNING", f"{participant}: no explicit QM class mapping")
-        elif implementation not in classes:
-            report("WARNING", f"{participant}: QM class {implementation} not yet implemented")
+        if participants.get(receiver) == "ao" and receiver in classes and signal not in triggers.get(receiver, set()):
+            report("WARNING", f"collab:{line}: {receiver} has no QM transition for {signal}")
+    for participant, role in sorted(participants.items()):
+        if role == "ao" and participant not in classes:
+            report("WARNING", f"{participant}: QM class {participant} not yet implemented")
 
     print(f"Architecture check: {len(participants)} participants, {len(routes)} directed routes, "
           f"{len(set(signal for _, _, signal, _ in routes))} unique signals; "
           f"{errors} error(s), {warnings} warning(s).")
     print("UNVERIFIED: QM/header integration, C++ event posts, ISR wiring, payloads and end-to-end routing "
-          "are outside v0.1 scope.")
+          "are outside v0.2 scope.")
     return 1 if errors else 0
 
 
