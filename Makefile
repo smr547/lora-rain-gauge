@@ -10,7 +10,7 @@ COLLAB_MODEL := $(MODEL_DIR)/rain-gauge.collab
 PUML := $(MODEL_DIR)/rain-gauge.puml
 
 .DEFAULT_GOAL := help
-.PHONY: help qm collab diagrams generate validate check
+.PHONY: help qm collab diagrams generate validate test check
 
 help:
 	@echo "qm        Generate C++ from the QM model"
@@ -18,7 +18,8 @@ help:
 	@echo "diagrams  Render the collaboration SVG"
 	@echo "generate  Run QM, Collab and PlantUML"
 	@echo "validate  Read-only model consistency checks"
-	@echo "check     Read-only Collab syntax and architecture checks"
+	@echo "test      Run validator regression tests"
+	@echo "check     Read-only Collab, architecture and regression checks"
 
 qm:
 	$(QM) $(QM_MODEL) -c
@@ -34,6 +35,10 @@ generate: qm collab diagrams
 validate:
 	$(PYTHON) tools/validate_architecture.py $(COLLAB_MODEL) $(QM_MODEL)
 
+test:
+	$(PYTHON) -m unittest discover -s tests -v
+
 check:
 	$(PYTHON) $(COLLAB) --check $(COLLAB_MODEL)
 	$(MAKE) validate
+	$(MAKE) test
