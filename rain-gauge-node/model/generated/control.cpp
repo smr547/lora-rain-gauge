@@ -57,6 +57,7 @@ public:
 protected:
     Q_STATE_DECL(initial);
     Q_STATE_DECL(Running);
+    Q_STATE_DECL(Sleeping);
 }; // class Control
 //$enddecl${AOs::Control} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -114,6 +115,29 @@ Q_STATE_DEF(Control, Running) {
             status_ = Q_RET_HANDLED;
             break;
         }
+        //${AOs::Control::SM::Running::TIMEOUT}
+        case TIMEOUT_SIG: {
+            //${AOs::Control::SM::Running::TIMEOUT::[gaurdtext]}
+            if (m_busyMask == 0U) {
+                status_ = tran(&Sleeping);
+            }
+            else {
+                status_ = Q_RET_UNHANDLED;
+            }
+            break;
+        }
+        default: {
+            status_ = super(&top);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Control::SM::Sleeping} ..............................................
+Q_STATE_DEF(Control, Sleeping) {
+    QP::QState status_;
+    switch (e->sig) {
         default: {
             status_ = super(&top);
             break;

@@ -42,7 +42,8 @@ public:
     enum { TICKS_PER_SEC = 100 }; // numer of clock ticks in a second
     static void init(void);
     static void terminate(int16_t);
-    static void start(void);
+    static void start(void)
+    static void goToSleep(void);
 };
 
 enum RainGaugeSignals {

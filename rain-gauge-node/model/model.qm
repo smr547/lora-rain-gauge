@@ -127,9 +127,9 @@
      </tran>
      <tran trig="TIMEOUT">
       <choice target="../../../2">
-       <guard brief="m_busyMask == 0U"/>
-       <choice_glyph conn="83,25,5,0,37,15">
-        <action box="1,0,18,7"/>
+       <guard brief="gaurd text">m_busyMask == 0U</guard>
+       <choice_glyph conn="83,25,5,0,38,15">
+        <action box="1,0,23,2"/>
        </choice_glyph>
       </choice>
       <tran_glyph conn="55,26,3,-1,28,-1">
