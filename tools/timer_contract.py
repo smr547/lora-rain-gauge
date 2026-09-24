@@ -14,7 +14,7 @@ def _constant_value(expression, source, seen=None):
     import ast
     seen = seen or frozenset()
     expression = expression.strip()
-    expression = re.sub(r"\\b(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]+\\b", r"\\1", expression)
+    expression = re.sub(r"\b(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]+\b", r"\1", expression)
     try:
         tree = ast.parse(expression, mode="eval").body
     except SyntaxError:
@@ -28,8 +28,8 @@ def _constant_value(expression, source, seen=None):
             if name in seen:
                 return None
             patterns = (
-                r"(?m)^\\s*#\\s*define\\s+" + re.escape(name) + r"\\s+([^\\n]+)",
-                r"\\b(?:constexpr|const)\\s+(?:[\\w:]+\\s+)+" + re.escape(name) + r"\\s*=\\s*([^;]+);",
+                r"(?m)^\s*#\s*define\s+" + re.escape(name) + r"\s+([^\n]+)",
+                r"\b(?:constexpr|const)\s+(?:[\w:]+\s+)+" + re.escape(name) + r"\s*=\s*([^;]+);",
             )
             for pattern in patterns:
                 match = re.search(pattern, source)
@@ -52,7 +52,7 @@ def _constant_value(expression, source, seen=None):
 
 def _arm_intervals(code, member):
     """Return interval expressions; omitted second argument means one-shot."""
-    pattern = r"\\b" + re.escape(member) + r"\\s*\\.\\s*armX\\s*\\("
+    pattern = r"\b" + re.escape(member) + r"\s*\.\s*armX\s*\("
     intervals = []
     for match in re.finditer(pattern, code):
         start = match.end()
