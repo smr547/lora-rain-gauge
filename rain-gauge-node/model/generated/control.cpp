@@ -111,7 +111,7 @@ Q_STATE_DEF(Control, Running) {
     switch (e->sig) {
         //${AOs::Control::SM::Running}
         case Q_ENTRY_SIG: {
-            m_sleepTimer.armX(3000U, 3000U);
+            m_sleepTimer.armX(3000U, 0U);
             status_ = Q_RET_HANDLED;
             break;
         }

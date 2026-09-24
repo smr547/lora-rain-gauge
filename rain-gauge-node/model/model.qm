@@ -117,7 +117,7 @@ m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)</code>
      </initial_glyph>
     </initial>
     <state name="Running">
-     <entry brief="start the Sleep Timer">m_sleepTimer.armX(3000U, 3000U);</entry>
+     <entry brief="start the Sleep Timer">m_sleepTimer.armX(3000U, 0U);</entry>
      <tran trig="BUCKET_IDLE">
       <action>m_busyMask &amp;= ~BUCKET_BUSY;</action>
       <tran_glyph conn="55,18,3,-1,28">

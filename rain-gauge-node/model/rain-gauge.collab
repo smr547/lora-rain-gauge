@@ -15,7 +15,7 @@ ao Radio
 isr BucketReedSwitch
 isr RadioDIO0
 
-timer SleepTimer "One-shot; inactivity interval"
+timer SleepTimer "Periodic; inactivity interval"
 
 collaboration SleepTimer Control
   SleepTimer -> Control
