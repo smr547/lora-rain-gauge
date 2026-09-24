@@ -72,6 +72,7 @@ enum RainGaugeSignals {
     RADIO_IDLE_SIG,
     RADIO_BUSY_SIG,
     RADIO_TX_TIMEOUT_SIG,
+    CONSIDER_SLEEPING_SIG,
     MAX_SIG
 };
 

@@ -117,7 +117,7 @@ m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)</code>
      </initial_glyph>
     </initial>
     <state name="Running">
-     <entry brief="start the Sleep Timer">m_sleepTimer.armX(3000U, 0U);</entry>
+     <entry brief="start the Sleep Timer">m_sleepTimer.armX(SLEEP_INTERVAL_TICKS, SLEEP_INTERVAL_TICKS);</entry>
      <tran trig="BUCKET_IDLE">
       <action>m_busyMask &amp;= ~BUCKET_BUSY;</action>
       <tran_glyph conn="55,18,3,-1,28">
@@ -179,7 +179,10 @@ AO_Radio-&gt;POST(report, this);</action>
      </state_glyph>
     </state>
     <state name="Sleeping">
-     <state_glyph node="108,40,33,20"/>
+     <entry>m_sleepTimer.disarm();</entry>
+     <state_glyph node="108,40,33,20">
+      <entry box="1,2,6,2"/>
+     </state_glyph>
     </state>
     <state_diagram size="147,88"/>
    </statechart>
@@ -403,6 +406,7 @@ enum RainGaugeSignals {
     RADIO_IDLE_SIG,
     RADIO_BUSY_SIG,
     RADIO_TX_TIMEOUT_SIG,
+    CONSIDER_SLEEPING_SIG,
     MAX_SIG
 };
 
@@ -454,7 +458,9 @@ $define${AOs::TippingBucket}</text>
 #include &quot;events.hpp&quot;
 
 
-
+namespace {
+    constexpr QP::QTimeEvtCtr SLEEP_INTERVAL_TICKS = 3000U;
+}
 
 
 using namespace QP;

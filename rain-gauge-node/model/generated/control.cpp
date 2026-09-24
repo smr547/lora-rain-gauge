@@ -33,7 +33,9 @@
 #include "events.hpp"
 
 
-
+namespace {
+    constexpr QP::QTimeEvtCtr SLEEP_INTERVAL_TICKS = 3000U;
+}
 
 
 using namespace QP;
@@ -111,7 +113,7 @@ Q_STATE_DEF(Control, Running) {
     switch (e->sig) {
         //${AOs::Control::SM::Running}
         case Q_ENTRY_SIG: {
-            m_sleepTimer.armX(3000U, 0U);
+            m_sleepTimer.armX(SLEEP_INTERVAL_TICKS, SLEEP_INTERVAL_TICKS);
             status_ = Q_RET_HANDLED;
             break;
         }
@@ -183,6 +185,12 @@ Q_STATE_DEF(Control, Running) {
 Q_STATE_DEF(Control, Sleeping) {
     QP::QState status_;
     switch (e->sig) {
+        //${AOs::Control::SM::Sleeping}
+        case Q_ENTRY_SIG: {
+            m_sleepTimer.disarm();
+            status_ = Q_RET_HANDLED;
+            break;
+        }
         default: {
             status_ = super(&top);
             break;
