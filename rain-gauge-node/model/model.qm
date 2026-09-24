@@ -138,7 +138,7 @@ m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)</code>
        </choice_glyph>
       </choice>
       <tran_glyph conn="55,26,3,-1,28,-1">
-       <action box="0,-2,10,2"/>
+       <action box="0,-2,18,2"/>
       </tran_glyph>
      </tran>
      <tran trig="RADIO_BUSY">

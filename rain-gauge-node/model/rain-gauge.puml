@@ -11,7 +11,7 @@ component "Radio" as Radio <<AO>>
 component "BucketReedSwitch" as BucketReedSwitch <<ISR>>
 component "RadioDIO0" as RadioDIO0 <<ISR>>
 component "◷ <b>SleepTimer</b>\nPeriodic; inactivity interval" as SleepTimer <<TIMER>>
-component "◷ <b>RadioTxTimer</b>\nPeriodic; transmission timeout" as RadioTxTimer <<TIMER>>
+component "◷ <b>RadioTxTimer</b>\nOne-shot; transmission timeout" as RadioTxTimer <<TIMER>>
 
 SleepTimer --> Control
 note on link
