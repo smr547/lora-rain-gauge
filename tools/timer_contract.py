@@ -31,6 +31,10 @@ def check_timers(timers, routes, qm_path, report):
                        if "QTimeEvt" in a.get("type", "")]
             if not members:
                 report("ERROR", f"{prefix}: no QP::QTimeEvt member in QM class")
+            triggers = {t.get("trig") for t in owner.findall(".//tran")}
+            if signal not in triggers:
+                report("ERROR", f"{prefix}: QM HSM has no transition triggered by {signal}")
+            if not members:
                 continue
             # Prefer a constructor binding to the declared signal over a guessed
             # correspondence between conceptual and C++ timer names.
@@ -52,8 +56,6 @@ def check_timers(timers, routes, qm_path, report):
             if not re.search(r"\b" + re.escape(member) + r"\s*\.\s*armX\s*\(", code):
                 report("ERROR", f"{prefix}: {member}.armX(...) not found in QM embedded code/actions")
             triggers = {t.get("trig") for t in owner.findall(".//tran")}
-            if signal not in triggers:
-                report("ERROR", f"{prefix}: QM HSM has no transition triggered by {signal}")
             if not tick_service:
                 report("WARNING", f"{prefix}: no QF tick service found in QM templates; verify external tick integration")
             if not re.search(r"\b" + re.escape(member) + r"\s*\.\s*(?:disarm|rearm)\s*\(", code):
