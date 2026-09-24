@@ -7,6 +7,7 @@
 
 enum AppSignals {
     CONSIDER_SLEEPING_SIG = QP::Q_USER_SIG,  // SleepTimer -> Control
+    RADIO_TX_TIMEOUT_SIG,  // RadioTxTimer -> Radio
     // routes:
     //   BucketReedSwitch -> TippingBucket
     //   Control -> TippingBucket

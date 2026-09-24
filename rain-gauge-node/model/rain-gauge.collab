@@ -22,6 +22,13 @@ collaboration SleepTimer Control
     CONSIDER_SLEEPING
 end
 
+timer RadioTxTimer "One-shot; transmission timeout"
+
+collaboration RadioTxTimer Radio
+  RadioTxTimer -> Radio
+    RADIO_TX_TIMEOUT
+end
+
 # BucketReedSwitch is triggered by the falling edge of the rain gauge reed switch
 # (this GPIO signal is normally high as a result of a 10kOhm pullup resister and 100nF filtering capacitor)
 # This event is signals the start of a possible rain gauge bucket tip event
