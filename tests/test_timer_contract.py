@@ -30,6 +30,9 @@ end
             check_timers(timers, routes, qm, lambda level, message: diagnostics.append((level, message)))
             self.assertTrue(any(level == "ERROR" and "no QP::QTimeEvt member" in message
                                 for level, message in diagnostics), diagnostics)
+            self.assertTrue(any(level == "ERROR" and "no transition triggered by CONSIDER_SLEEPING" in message
+                                for level, message in diagnostics), diagnostics)
+            self.assertEqual(2, sum(level == "ERROR" for level, _ in diagnostics), diagnostics)
 
     def test_complete_static_pattern_has_no_errors(self):
         with tempfile.TemporaryDirectory() as directory:
