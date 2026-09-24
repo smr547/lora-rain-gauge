@@ -121,8 +121,19 @@ def check_timers(timers, routes, qm_path, report):
             member = bound[0]
             code = "\n".join(node.text or "" for node in owner.iter() if node.tag in ("code", "entry", "exit", "action"))
             # Code inside QM actions/entries is captured by iterating text nodes.
-            if not re.search(r"\b" + re.escape(member) + r"\s*\.\s*armX\s*\(", code):
+            intervals = _arm_intervals(code, member)
+            if not intervals:
                 report("ERROR", f"{prefix}: {member}.armX(...) not found in QM embedded code/actions")
+            cadence_kind = cadence.split(";", 1)[0].strip().lower()
+            if cadence_kind in ("periodic", "one-shot", "oneshot"):
+                for interval in intervals:
+                    value = _constant_value(interval, all_text)
+                    if value is None:
+                        report("WARNING", f"{prefix}: UNVERIFIED armX interval {interval!r}; cannot establish {cadence_kind} cadence")
+                    elif cadence_kind == "periodic" and value == 0:
+                        report("ERROR", f"{prefix}: Collab declares Periodic, but armX interval resolves to zero")
+                    elif cadence_kind in ("one-shot", "oneshot") and value != 0:
+                        report("ERROR", f"{prefix}: Collab declares One-shot, but armX interval resolves to {value}")
             triggers = {t.get("trig") for t in owner.findall(".//tran")}
             if not tick_service:
                 report("WARNING", f"{prefix}: no QF tick service found in QM templates; verify external tick integration")
