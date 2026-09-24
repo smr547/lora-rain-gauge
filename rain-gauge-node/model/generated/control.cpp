@@ -50,6 +50,7 @@ private:
     std::uint8_t m_busyMask;
     uint64_t m_bucketTips;
     uint64_t m_bucketFaults;
+    QP::QTimeEvt m_sleepTimer;
 
 public:
     Control();
@@ -89,7 +90,8 @@ Control Control::instance;
 
 //${AOs::Control::Control} ...................................................
 Control::Control()
-: QActive(Q_STATE_CAST(&Control::initial))
+: QActive(Q_STATE_CAST(&Control::initial)),
+m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)
 {}
 
 //${AOs::Control::SM} ........................................................
@@ -107,6 +109,12 @@ Q_STATE_DEF(Control, initial) {
 Q_STATE_DEF(Control, Running) {
     QP::QState status_;
     switch (e->sig) {
+        //${AOs::Control::SM::Running}
+        case Q_ENTRY_SIG: {
+            m_sleepTimer.armX(3000U, 3000U);
+            status_ = Q_RET_HANDLED;
+            break;
+        }
         //${AOs::Control::SM::Running::BUCKET_IDLE}
         case BUCKET_IDLE_SIG: {
             m_busyMask &= ~BUCKET_BUSY;
@@ -119,9 +127,9 @@ Q_STATE_DEF(Control, Running) {
             status_ = Q_RET_HANDLED;
             break;
         }
-        //${AOs::Control::SM::Running::TIMEOUT}
-        case TIMEOUT_SIG: {
-            //${AOs::Control::SM::Running::TIMEOUT::[nobusyworkers]}
+        //${AOs::Control::SM::Running::CONSIDER_SLEEPING}
+        case CONSIDER_SLEEPING_SIG: {
+            //${AOs::Control::SM::Running::CONSIDER_SLEEPIN~::[nobusyworkers]}
             if (m_busyMask == 0U) {
                 status_ = tran(&Sleeping);
             }

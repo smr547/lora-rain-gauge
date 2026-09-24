@@ -103,9 +103,11 @@
    </attribute>
    <attribute name="m_bucketTips" type="uint64_t" visibility="0x02" properties="0x00"/>
    <attribute name="m_bucketFaults" type="uint64_t" visibility="0x02" properties="0x00"/>
+   <attribute name="m_sleepTimer" type="QP::QTimeEvt" visibility="0x02" properties="0x00"/>
    <operation name="Control" type="" visibility="0x00" properties="0x00">
     <documentation>Control constructor</documentation>
-    <code>: QActive(Q_STATE_CAST(&amp;Control::initial))</code>
+    <code>: QActive(Q_STATE_CAST(&amp;Control::initial)),
+m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)</code>
    </operation>
    <statechart properties="0x02">
     <initial target="../1">
@@ -115,6 +117,7 @@
      </initial_glyph>
     </initial>
     <state name="Running">
+     <entry brief="start the Sleep Timer">m_sleepTimer.armX(3000U, 3000U);</entry>
      <tran trig="BUCKET_IDLE">
       <action>m_busyMask &amp;= ~BUCKET_BUSY;</action>
       <tran_glyph conn="55,18,3,-1,28">
@@ -127,7 +130,7 @@
        <action box="0,-2,21,2"/>
       </tran_glyph>
      </tran>
-     <tran trig="TIMEOUT">
+     <tran trig="CONSIDER_SLEEPING">
       <choice target="../../../2">
        <guard brief="no busy workers">m_busyMask == 0U</guard>
        <choice_glyph conn="83,25,5,0,38,15">
@@ -171,7 +174,9 @@ AO_Radio-&gt;POST(report, this);</action>
        <action box="0,-2,19,2"/>
       </tran_glyph>
      </tran>
-     <state_glyph node="55,9,34,57"/>
+     <state_glyph node="55,9,34,57">
+      <entry box="1,2,6,2"/>
+     </state_glyph>
     </state>
     <state name="Sleeping">
      <state_glyph node="108,40,33,20"/>
