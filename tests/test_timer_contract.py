@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from validate_architecture import parse_collab
-from timer_contract import check_timers
+from timer_contract import check_timers, _constant_value, _arm_intervals
 
 
 class TimerContractTests(unittest.TestCase):
@@ -33,6 +33,15 @@ end
             self.assertTrue(any(level == "ERROR" and "no transition triggered by CONSIDER_SLEEPING" in message
                                 for level, message in diagnostics), diagnostics)
             self.assertEqual(2, sum(level == "ERROR" for level, _ in diagnostics), diagnostics)
+
+    def test_periodic_contract_rejects_zero_interval(self):
+        self.assertEqual(["0U"], _arm_intervals("m_sleepTimer.armX(SLEEP_INTERVAL_TICKS, 0U);", "m_sleepTimer"))
+        self.assertEqual(0, _constant_value("0U", ""))
+        self.assertEqual(3000, _constant_value("SLEEP_INTERVAL_TICKS",
+                         "#define SLEEP_INTERVAL_TICKS 3000U"))
+        self.assertEqual(3000, _constant_value("SLEEP_INTERVAL_TICKS",
+                         "static constexpr QP::QTimeEvtCtr SLEEP_INTERVAL_TICKS = 3000U;"))
+        self.assertIsNone(_constant_value("runtimeInterval()", ""))
 
     def test_complete_static_pattern_has_no_errors(self):
         with tempfile.TemporaryDirectory() as directory:
