@@ -6,10 +6,11 @@
 #include "qpcpp.hpp"
 
 enum AppSignals {
+    CONSIDER_SLEEPING_SIG = QP::Q_USER_SIG,  // SleepTimer -> Control
     // routes:
     //   BucketReedSwitch -> TippingBucket
     //   Control -> TippingBucket
-    BUCKET_SWITCH_CLOSING_SIG = QP::Q_USER_SIG,
+    BUCKET_SWITCH_CLOSING_SIG,
     BUCKET_TIPPED_SIG,  // TippingBucket -> Control
     BUCKET_BUSY_SIG,  // TippingBucket -> Control
     BUCKET_IDLE_SIG,  // TippingBucket -> Control

@@ -10,6 +10,13 @@ component "Control" as Control <<AO>>
 component "Radio" as Radio <<AO>>
 component "BucketReedSwitch" as BucketReedSwitch <<ISR>>
 component "RadioDIO0" as RadioDIO0 <<ISR>>
+component "◷ <b>SleepTimer</b>\nOne-shot; inactivity interval" as SleepTimer <<TIMER>>
+
+SleepTimer --> Control
+note on link
+  SleepTimer -> Control
+    CONSIDER_SLEEPING
+end note
 
 BucketReedSwitch --> TippingBucket
 note on link

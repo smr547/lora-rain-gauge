@@ -15,6 +15,13 @@ ao Radio
 isr BucketReedSwitch
 isr RadioDIO0
 
+timer SleepTimer "One-shot; inactivity interval"
+
+collaboration SleepTimer Control
+  SleepTimer -> Control
+    CONSIDER_SLEEPING
+end
+
 # BucketReedSwitch is triggered by the falling edge of the rain gauge reed switch
 # (this GPIO signal is normally high as a result of a 10kOhm pullup resister and 100nF filtering capacitor)
 # This event is signals the start of a possible rain gauge bucket tip event
