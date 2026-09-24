@@ -8,12 +8,12 @@ contradictions are errors. This tool does not inspect generated C++.
 import argparse
 import re
 import shlex
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from timer_contract import check_timers
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from timer_contract import check_timers
 
 PARTICIPANT = re.compile(r"^(ao|isr)\s+([A-Za-z_][A-Za-z0-9_]*)\s*$")
 START = re.compile(r"^collaboration\s+(\w+)\s+(\w+)\s*$")
