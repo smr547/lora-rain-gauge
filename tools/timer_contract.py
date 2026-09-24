@@ -8,6 +8,74 @@ import re
 import xml.etree.ElementTree as ET
 
 
+
+def _constant_value(expression, source, seen=None):
+    """Resolve a deliberately small subset of integral C++ constant expressions."""
+    import ast
+    seen = seen or frozenset()
+    expression = expression.strip()
+    expression = re.sub(r"\\b(0[xX][0-9a-fA-F]+|[0-9]+)[uUlL]+\\b", r"\\1", expression)
+    try:
+        tree = ast.parse(expression, mode="eval").body
+    except SyntaxError:
+        return None
+
+    def evaluate(node):
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            return node.value
+        if isinstance(node, ast.Name):
+            name = node.id
+            if name in seen:
+                return None
+            patterns = (
+                r"(?m)^\\s*#\\s*define\\s+" + re.escape(name) + r"\\s+([^\\n]+)",
+                r"\\b(?:constexpr|const)\\s+(?:[\\w:]+\\s+)+" + re.escape(name) + r"\\s*=\\s*([^;]+);",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, source)
+                if match:
+                    return _constant_value(match.group(1).split("//")[0], source, seen | {name})
+            return None
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = evaluate(node.operand)
+            return None if value is None else (value if isinstance(node.op, ast.UAdd) else -value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult)):
+            left, right = evaluate(node.left), evaluate(node.right)
+            if left is None or right is None:
+                return None
+            return (left + right if isinstance(node.op, ast.Add) else
+                    left - right if isinstance(node.op, ast.Sub) else left * right)
+        return None
+
+    return evaluate(tree)
+
+
+def _arm_intervals(code, member):
+    """Return interval expressions; omitted second argument means one-shot."""
+    pattern = r"\\b" + re.escape(member) + r"\\s*\\.\\s*armX\\s*\\("
+    intervals = []
+    for match in re.finditer(pattern, code):
+        start = match.end()
+        depth = 0
+        args = []
+        last = start
+        for index in range(start, len(code)):
+            char = code[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    args.append(code[last:index].strip())
+                    break
+                depth -= 1
+            elif char == "," and depth == 0:
+                args.append(code[last:index].strip())
+                last = index + 1
+        if args:
+            intervals.append(args[1] if len(args) > 1 else "0U")
+    return intervals
+
+
 def check_timers(timers, routes, qm_path, report):
     root = ET.parse(qm_path).getroot()
     classes = {node.get("name"): node for node in root.findall(".//class")}
@@ -59,5 +127,5 @@ def check_timers(timers, routes, qm_path, report):
             if not tick_service:
                 report("WARNING", f"{prefix}: no QF tick service found in QM templates; verify external tick integration")
             if not re.search(r"\b" + re.escape(member) + r"\s*\.\s*(?:disarm|rearm)\s*\(", code):
-                report("WARNING", f"{prefix}: no explicit disarm/rearm found; review lifecycle (may be valid for one-shot)")
+                report("WARNING", f"{prefix}: no explicit disarm/rearm found; review lifecycle (not required for periodic rearming)")
             report("INFO", f"{prefix}: static checks cannot prove scheduling paths or runtime delivery")
