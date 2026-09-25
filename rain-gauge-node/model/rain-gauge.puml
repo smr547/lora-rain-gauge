@@ -46,7 +46,8 @@ end note
 Control <--> Radio
 note on link
   Control -> Radio
-    SEND_REPORT
+    SEND_HEALTH_REPORT
+    SEND_RAIN_REPORT
 
   Radio -> Control
     RADIO_BUSY

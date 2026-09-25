@@ -16,7 +16,8 @@ enum AppSignals {
     BUCKET_BUSY_SIG,  // TippingBucket -> Control
     BUCKET_IDLE_SIG,  // TippingBucket -> Control
     BUCKET_FAULT_SIG,  // TippingBucket -> Control
-    SEND_REPORT_SIG,  // Control -> Radio
+    SEND_HEALTH_REPORT_SIG,  // Control -> Radio
+    SEND_RAIN_REPORT_SIG,  // Control -> Radio
     RADIO_BUSY_SIG,  // Radio -> Control
     RADIO_IDLE_SIG,  // Radio -> Control
     RADIO_TX_DONE_SIG,  // RadioDIO0 -> Radio

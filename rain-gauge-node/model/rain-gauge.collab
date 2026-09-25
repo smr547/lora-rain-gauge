@@ -64,7 +64,8 @@ end
 
 collaboration Control Radio
   Control -> Radio
-    SEND_REPORT   # Control directs the sending of a report via radio
+    SEND_HEALTH_REPORT   # Control directs the sending of a periodic gauge health report via radio
+    SEND_RAIN_REPORT     # In response to a tipping bucket event, Control directs the sending of a rain report via radio
 
   Radio -> Control
     RADIO_BUSY

@@ -158,7 +158,7 @@ Q_STATE_DEF(Control, Running) {
 
             // send report
 
-            auto *report = Q_NEW(SendReportEvt, SEND_REPORT_SIG);
+            auto *report = Q_NEW(SendReportEvt, SEND_RAIN_REPORT_SIG);
 
             report->bucketTips   = m_bucketTips;
             report->bucketFaults = m_bucketFaults;
