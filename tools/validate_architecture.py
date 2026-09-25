@@ -84,6 +84,40 @@ def qm_facts(path):
     return classes, triggers, symbols
 
 
+
+# Incremental sender contract: the rainfall route is implemented in QM.
+# The health route is deliberately excluded until its periodic sender exists.
+ENFORCED_SENDER_ROUTES = {("Control", "Radio", "SEND_RAIN_REPORT")}
+
+
+def check_sender_route(classes, sender, receiver, signal, line, report):
+    """Check event construction and destination POST in one QM action.
+
+    This is a conservative static pattern check, not C++ data-flow analysis.
+    In particular, it does not prove runtime delivery or payload correctness.
+    """
+    owner = classes.get(sender)
+    if owner is None:
+        return  # The existing missing-class diagnostic covers this case.
+    for action in owner.findall(".//action"):
+        code = action.text or ""
+        # Remove comments so commented-out construction/posting cannot satisfy the contract.
+        code = re.sub(r"/\\*.*?\\*/|//[^\\n]*", "", code, flags=re.S)
+        allocation = re.search(
+            r"\\b(?:auto\\s*\\*|[A-Za-z_]\\w*\\s*\\*)\\s*(\\w+)\\s*=\\s*"
+            r"Q_NEW\\s*\\(\\s*\\w+\\s*,\\s*" + re.escape(signal) + r"_SIG\\s*\\)",
+            code,
+        )
+        if allocation and re.search(
+            r"\\bAO_" + re.escape(receiver) + r"\\s*->\\s*POST\\s*\\(\\s*"
+            + re.escape(allocation.group(1)) + r"\\s*,",
+            code[allocation.end():],
+        ):
+            return
+    report("ERROR", f"collab:{line}: {sender} has no QM event construction and POST "
+          f"for {signal} to {receiver}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("collab", type=Path)
@@ -119,12 +153,16 @@ def main():
         if role == "ao" and participant not in classes:
             report("WARNING", f"{participant}: QM class {participant} not yet implemented")
 
+    for sender, receiver, signal, line in routes:
+        if (sender, receiver, signal) in ENFORCED_SENDER_ROUTES:
+            check_sender_route(classes, sender, receiver, signal, line, report)
+
     check_timers(timers, routes, args.qm, report)
 
     print(f"Architecture check: {len(participants)} participants, {len(routes)} directed routes, "
           f"{len(set(signal for _, _, signal, _ in routes))} unique signals; "
           f"{errors} error(s), {warnings} warning(s).")
-    print("UNVERIFIED: QM/header integration, C++ event posts, ISR wiring, payloads and end-to-end routing "
+    print("UNVERIFIED: general C++ event posts, ISR wiring, payloads and end-to-end routing "
           "are outside v0.2 scope.")
     return 1 if errors else 0
 
