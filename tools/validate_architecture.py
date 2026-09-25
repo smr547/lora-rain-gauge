@@ -102,15 +102,15 @@ def check_sender_route(classes, sender, receiver, signal, line, report):
     for action in owner.findall(".//action"):
         code = action.text or ""
         # Remove comments so commented-out construction/posting cannot satisfy the contract.
-        code = re.sub(r"/\\*.*?\\*/|//[^\\n]*", "", code, flags=re.S)
+        code = re.sub(r"/\*.*?\*/|//[^\n]*", "", code, flags=re.S)
         allocation = re.search(
-            r"\\b(?:auto\\s*\\*|[A-Za-z_]\\w*\\s*\\*)\\s*(\\w+)\\s*=\\s*"
-            r"Q_NEW\\s*\\(\\s*\\w+\\s*,\\s*" + re.escape(signal) + r"_SIG\\s*\\)",
+            r"\b(?:auto\s*\*|[A-Za-z_]\w*\s*\*)\s*(\w+)\s*=\s*"
+            r"Q_NEW\s*\(\s*\w+\s*,\s*" + re.escape(signal) + r"_SIG\s*\)",
             code,
         )
         if allocation and re.search(
-            r"\\bAO_" + re.escape(receiver) + r"\\s*->\\s*POST\\s*\\(\\s*"
-            + re.escape(allocation.group(1)) + r"\\s*,",
+            r"\bAO_" + re.escape(receiver) + r"\s*->\s*POST\s*\(\s*"
+            + re.escape(allocation.group(1)) + r"\s*,",
             code[allocation.end():],
         ):
             return
