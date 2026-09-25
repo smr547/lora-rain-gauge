@@ -33,7 +33,9 @@
 #include "events.hpp"
 
 
-
+namespace {
+    constexpr QP::QTimeEvtCtr SLEEP_INTERVAL_TICKS = 3000U;
+}
 
 
 using namespace QP;
@@ -50,6 +52,7 @@ private:
     std::uint8_t m_busyMask;
     uint64_t m_bucketTips;
     uint64_t m_bucketFaults;
+    QP::QTimeEvt m_sleepTimer;
 
 public:
     Control();
@@ -89,7 +92,8 @@ Control Control::instance;
 
 //${AOs::Control::Control} ...................................................
 Control::Control()
-: QActive(Q_STATE_CAST(&Control::initial))
+: QActive(Q_STATE_CAST(&Control::initial)),
+m_sleepTimer(this, CONSIDER_SLEEPING_SIG, 0U)
 {}
 
 //${AOs::Control::SM} ........................................................
@@ -107,6 +111,12 @@ Q_STATE_DEF(Control, initial) {
 Q_STATE_DEF(Control, Running) {
     QP::QState status_;
     switch (e->sig) {
+        //${AOs::Control::SM::Running}
+        case Q_ENTRY_SIG: {
+            m_sleepTimer.armX(SLEEP_INTERVAL_TICKS, SLEEP_INTERVAL_TICKS);
+            status_ = Q_RET_HANDLED;
+            break;
+        }
         //${AOs::Control::SM::Running::BUCKET_IDLE}
         case BUCKET_IDLE_SIG: {
             m_busyMask &= ~BUCKET_BUSY;
@@ -119,9 +129,9 @@ Q_STATE_DEF(Control, Running) {
             status_ = Q_RET_HANDLED;
             break;
         }
-        //${AOs::Control::SM::Running::TIMEOUT}
-        case TIMEOUT_SIG: {
-            //${AOs::Control::SM::Running::TIMEOUT::[nobusyworkers]}
+        //${AOs::Control::SM::Running::CONSIDER_SLEEPING}
+        case CONSIDER_SLEEPING_SIG: {
+            //${AOs::Control::SM::Running::CONSIDER_SLEEPIN~::[nobusyworkers]}
             if (m_busyMask == 0U) {
                 status_ = tran(&Sleeping);
             }
@@ -148,7 +158,7 @@ Q_STATE_DEF(Control, Running) {
 
             // send report
 
-            auto *report = Q_NEW(SendReportEvt, SEND_REPORT_SIG);
+            auto *report = Q_NEW(SendReportEvt, SEND_RAIN_REPORT_SIG);
 
             report->bucketTips   = m_bucketTips;
             report->bucketFaults = m_bucketFaults;
@@ -175,6 +185,12 @@ Q_STATE_DEF(Control, Running) {
 Q_STATE_DEF(Control, Sleeping) {
     QP::QState status_;
     switch (e->sig) {
+        //${AOs::Control::SM::Sleeping}
+        case Q_ENTRY_SIG: {
+            m_sleepTimer.disarm();
+            status_ = Q_RET_HANDLED;
+            break;
+        }
         default: {
             status_ = super(&top);
             break;

@@ -77,6 +77,7 @@ protected:
     Q_STATE_DECL(Busy);
     Q_STATE_DECL(Initialising);
     Q_STATE_DECL(Transmitting);
+    Q_STATE_DECL(InitiateTX);
 }; // class Radio
 //$enddecl${AOs::Radio} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -149,6 +150,7 @@ Q_STATE_DEF(Radio, initial) {
     QS_FUN_DICTIONARY(&Radio::Busy);
     QS_FUN_DICTIONARY(&Radio::Initialising);
     QS_FUN_DICTIONARY(&Radio::Transmitting);
+    QS_FUN_DICTIONARY(&Radio::InitiateTX);
 
     return tran(&Initialising);
 }
@@ -157,25 +159,21 @@ Q_STATE_DEF(Radio, initial) {
 Q_STATE_DEF(Radio, Idle) {
     QP::QState status_;
     switch (e->sig) {
-        //${AOs::Radio::SM::Idle::SEND_REPORT}
-        case SEND_REPORT_SIG: {
-            auto const *report =
-                static_cast<SendReportEvt const *>(e);
+        //${AOs::Radio::SM::Idle}
+        case Q_ENTRY_SIG: {
 
-            m_reportBucketTips   = report->bucketTips;
-            m_reportBucketFaults = report->bucketFaults;
-
-            m_lastRadioError = prepareAndStartTransmission();
-
-
-            //${AOs::Radio::SM::Idle::SEND_REPORT::[OK]}
-            if (m_lastRadioError == RADIOLIB_ERR_NONE) {
-                status_ = tran(&Transmitting);
-            }
-            //${AOs::Radio::SM::Idle::SEND_REPORT::[error]}
-            else {
-                status_ = tran(&Fault);
-            }
+            AO_Control->POST(&radioIdleEvt, this);
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Radio::SM::Idle::SEND_RAIN_REPORT}
+        case SEND_RAIN_REPORT_SIG: {
+            status_ = tran(&InitiateTX);
+            break;
+        }
+        //${AOs::Radio::SM::Idle::SEND_HEALTH_REPORT}
+        case SEND_HEALTH_REPORT_SIG: {
+            status_ = tran(&InitiateTX);
             break;
         }
         default: {
@@ -219,8 +217,13 @@ Q_STATE_DEF(Radio, Busy) {
         case Q_EXIT_SIG: {
 
             // Busy exit
-            AO_Control->POST(&radioIdleEvt, this);
+            m_txTimer.disarm();
             status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Radio::SM::Busy::RADIO_TX_TIMEOUT}
+        case RADIO_TX_TIMEOUT_SIG: {
+            status_ = tran(&Fault);
             break;
         }
         default: {
@@ -244,11 +247,11 @@ Q_STATE_DEF(Radio, Initialising) {
         }
         //${AOs::Radio::SM::Busy::Initialising::CONTINUE}
         case CONTINUE_SIG: {
-            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[initOK]}
+            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[success]}
             if (m_lastRadioError == RADIOLIB_ERR_NONE) {
                 status_ = tran(&Idle);
             }
-            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[error]}
+            //${AOs::Radio::SM::Busy::Initialising::CONTINUE::[ERROR]}
             else {
                 status_ = tran(&Fault);
             }
@@ -268,7 +271,9 @@ Q_STATE_DEF(Radio, Transmitting) {
     switch (e->sig) {
         //${AOs::Radio::SM::Busy::Transmitting}
         case Q_ENTRY_SIG: {
-            m_txTimer.armX(TX_TIMEOUT_TICKS);
+
+
+
             status_ = Q_RET_HANDLED;
             break;
         }
@@ -287,9 +292,45 @@ Q_STATE_DEF(Radio, Transmitting) {
             }
             break;
         }
-        //${AOs::Radio::SM::Busy::Transmitting::RADIO_TX_TIMEOUT}
-        case RADIO_TX_TIMEOUT_SIG: {
-            status_ = tran(&Fault);
+        default: {
+            status_ = super(&Busy);
+            break;
+        }
+    }
+    return status_;
+}
+
+//${AOs::Radio::SM::Busy::InitiateTX} ........................................
+Q_STATE_DEF(Radio, InitiateTX) {
+    QP::QState status_;
+    switch (e->sig) {
+        //${AOs::Radio::SM::Busy::InitiateTX}
+        case Q_ENTRY_SIG: {
+            m_txTimer.armX(TX_TIMEOUT_TICKS);
+
+            auto const *report =
+                static_cast<SendReportEvt const *>(e);
+
+            m_reportBucketTips   = report->bucketTips;
+            m_reportBucketFaults = report->bucketFaults;
+
+            m_lastRadioError = prepareAndStartTransmission();
+
+            this->postLIFO(&continueEvt);
+
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        //${AOs::Radio::SM::Busy::InitiateTX::CONTINUE}
+        case CONTINUE_SIG: {
+            //${AOs::Radio::SM::Busy::InitiateTX::CONTINUE::[NO_ERROR]}
+            if (m_lastRadioError == RADIOLIB_ERR_NONE) {
+                status_ = tran(&Transmitting);
+            }
+            //${AOs::Radio::SM::Busy::InitiateTX::CONTINUE::[ERROR]}
+            else {
+                status_ = tran(&Fault);
+            }
             break;
         }
         default: {

@@ -15,6 +15,20 @@ ao Radio
 isr BucketReedSwitch
 isr RadioDIO0
 
+timer SleepTimer "Periodic; inactivity interval"
+
+collaboration SleepTimer Control
+  SleepTimer -> Control
+    CONSIDER_SLEEPING
+end
+
+timer RadioTxTimer "One-shot; transmission timeout"
+
+collaboration RadioTxTimer Radio
+  RadioTxTimer -> Radio
+    RADIO_TX_TIMEOUT
+end
+
 # BucketReedSwitch is triggered by the falling edge of the rain gauge reed switch
 # (this GPIO signal is normally high as a result of a 10kOhm pullup resister and 100nF filtering capacitor)
 # This event is signals the start of a possible rain gauge bucket tip event
@@ -50,7 +64,8 @@ end
 
 collaboration Control Radio
   Control -> Radio
-    SEND_REPORT   # Control directs the sending of a report via radio
+    SEND_HEALTH_REPORT   # Control directs the sending of a periodic gauge health report via radio
+    SEND_RAIN_REPORT     # In response to a tipping bucket event, Control directs the sending of a rain report via radio
 
   Radio -> Control
     RADIO_BUSY
