@@ -104,7 +104,7 @@ Control -> Radio
 SEND_HEALTH_REPORT
 end
 """, encoding="utf-8")
-        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\\nMAX_APP_SIG"), encoding="utf-8")
+        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\nMAX_APP_SIG"), encoding="utf-8")
         self.qm.write_text(QM.replace(
             '</model>', '<class name="Radio"><state><tran trig="SEND_HEALT_REPORT"/></state></class></model>'
         ), encoding="utf-8")
@@ -119,7 +119,7 @@ Control -> Radio
 SEND_HEALTH_REPORT
 end
 """, encoding="utf-8")
-        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\\nMAX_APP_SIG"), encoding="utf-8")
+        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\nMAX_APP_SIG"), encoding="utf-8")
         self.qm.write_text(QM.replace(
             '<tran trig="BUCKET_TIPPED"/>',
             '<tran trig="BUCKET_TIPPED"/><tran trig="SEND_HEALTH_REPORT"/>'
