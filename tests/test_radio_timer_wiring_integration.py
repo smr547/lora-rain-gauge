@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,38 +35,64 @@ class RadioTimerWiringTests(unittest.TestCase):
                 capture_output=True, text=True, check=False,
             )
 
+    def run_with_qm_mutation(self, mutate):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            qm = work / "model.qm"
+            root = ET.parse(MODEL / "model.qm")
+            radio = next(node for node in root.findall(".//class")
+                         if node.get("name") == "Radio")
+            mutate(radio)
+            root.write(qm, encoding="unicode", xml_declaration=True)
+            collab = work / "rain-gauge.collab"
+            collab.write_bytes((MODEL / "rain-gauge.collab").read_bytes())
+            (work / "rain-gauge-signals.hpp").write_bytes(
+                (MODEL / "rain-gauge-signals.hpp").read_bytes()
+            )
+            return subprocess.run(
+                [sys.executable, str(VALIDATOR), str(collab), str(qm)],
+                capture_output=True, text=True, check=False,
+            )
+
+    def remove_arm(self, radio, documentation=False):
+        entries = [node for node in radio.findall(".//entry")
+                   if "m_txTimer.armX(TX_TIMEOUT_TICKS)" in (node.text or "")]
+        self.assertEqual(1, len(entries), "expected one Radio TX timer entry action")
+        entry = entries[0]
+        entry.text = (entry.text or "").replace("m_txTimer.armX(TX_TIMEOUT_TICKS);", "", 1)
+        if documentation:
+            ET.SubElement(radio, "documentation").text = "m_txTimer.armX(TX_TIMEOUT_TICKS);"
+
     def assert_timer_error(self, result, diagnostic):
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertIn(PREFIX + diagnostic, result.stdout)
         self.assertIn("1 error(s)", result.stdout)
 
     def test_missing_arm_is_error(self):
-        result = self.run_with_qm_change(
-            "<entry>m_txTimer.armX(TX_TIMEOUT_TICKS);</entry>",
-            "<entry></entry>",
-        )
+        result = self.run_with_qm_mutation(lambda radio: self.remove_arm(radio))
         self.assert_timer_error(
             result, "m_txTimer.armX(...) not found in QM embedded code/actions"
         )
 
     def test_arm_in_qm_comment_does_not_count(self):
-        result = self.run_with_qm_change(
-            "<entry>m_txTimer.armX(TX_TIMEOUT_TICKS);</entry>",
-            "<entry></entry><documentation>m_txTimer.armX(TX_TIMEOUT_TICKS);</documentation>",
+        result = self.run_with_qm_mutation(
+            lambda radio: self.remove_arm(radio, documentation=True)
         )
         self.assert_timer_error(
             result, "m_txTimer.armX(...) not found in QM embedded code/actions"
         )
 
     def test_missing_receiving_transition_is_error(self):
-        result = self.run_with_qm_change(
-            '<tran trig="RADIO_TX_TIMEOUT" target="../../../2">',
-            '<tran trig="CONTINUE" target="../../../2">',
-        )
+        def mutate(radio):
+            transitions = [node for node in radio.findall(".//tran")
+                           if node.get("trig") == "RADIO_TX_TIMEOUT"]
+            self.assertEqual(1, len(transitions), "expected one Radio timeout transition")
+            transitions[0].set("trig", "CONTINUE")
+        result = self.run_with_qm_mutation(mutate)
         self.assert_timer_error(
             result, "QM HSM has no transition triggered by RADIO_TX_TIMEOUT"
         )
-        self.assertIn("WARNING: collab:", result.stdout)
+        self.assertIn("ERROR: collab:", result.stdout)
 
     def test_wrong_constructor_signal_is_error(self):
         result = self.run_with_qm_change(
