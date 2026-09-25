@@ -2,8 +2,8 @@
 """Read-only, deliberately conservative Collab/QM architecture checker (v0.2).
 
 The collaboration source is the design intent. QM is a work in progress.
-Missing implementations are warnings; malformed sources and demonstrable
-contradictions are errors. This tool does not inspect generated C++.
+Missing QM classes are warnings; a declared route lacking its receiving AO
+transition, malformed sources and demonstrable contradictions are errors. This tool does not inspect generated C++.
 """
 import argparse
 import re
@@ -114,7 +114,7 @@ def main():
         if signal + "_SIG" not in declared_signals:
             report("ERROR", f"collab:{line}: {signal}_SIG missing from Collab-generated header")
         if participants.get(receiver) == "ao" and receiver in classes and signal not in triggers.get(receiver, set()):
-            report("WARNING", f"collab:{line}: {receiver} has no QM transition for {signal}")
+            report("ERROR", f"collab:{line}: {receiver} has no QM transition for {signal}")
     for participant, role in sorted(participants.items()):
         if role == "ao" and participant not in classes:
             report("WARNING", f"{participant}: QM class {participant} not yet implemented")
