@@ -94,8 +94,41 @@ class ArchitectureTests(unittest.TestCase):
             '<tran trig="BUCKET_SWITCH_CLOSING"/><tran trig="BUCKET_TIPPED"/>'
         ), encoding="utf-8")
         code, output = self.run_validator()
-        self.assertEqual(code, 0, output)
+        self.assertEqual(code, 1, output)
+        self.assertIn("ERROR: collab:", output)
         self.assertIn("Control has no QM transition for BUCKET_TIPPED", output)
+
+    def test_misspelled_health_report_transition_is_error(self):
+        self.collab.write_text(COLLAB + """collaboration Control Radio
+Control -> Radio
+SEND_HEALTH_REPORT
+end
+""", encoding="utf-8")
+        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\\nMAX_APP_SIG"), encoding="utf-8")
+        self.qm.write_text(QM.replace(
+            '</model>', '<class name="Radio"><state><tran trig="SEND_HEALT_REPORT"/></state></class></model>'
+        ), encoding="utf-8")
+        code, output = self.run_validator()
+        self.assertEqual(1, code, output)
+        self.assertIn("ERROR: collab:", output)
+        self.assertIn("Radio has no QM transition for SEND_HEALTH_REPORT", output)
+
+    def test_health_report_transition_in_wrong_ao_is_error(self):
+        self.collab.write_text(COLLAB + """collaboration Control Radio
+Control -> Radio
+SEND_HEALTH_REPORT
+end
+""", encoding="utf-8")
+        self.header.write_text(HEADER.replace("MAX_APP_SIG", "SEND_HEALTH_REPORT_SIG,\\nMAX_APP_SIG"), encoding="utf-8")
+        self.qm.write_text(QM.replace(
+            '<tran trig="BUCKET_TIPPED"/>',
+            '<tran trig="BUCKET_TIPPED"/><tran trig="SEND_HEALTH_REPORT"/>'
+        ).replace(
+            '</model>', '<class name="Radio"><state/></class></model>'
+        ), encoding="utf-8")
+        code, output = self.run_validator()
+        self.assertEqual(1, code, output)
+        self.assertIn("Radio has no QM transition for SEND_HEALTH_REPORT", output)
 
     def test_missing_qm_implementation_is_warning_not_error(self):
         self.qm.write_text('<model/>', encoding="utf-8")
