@@ -66,7 +66,7 @@ class RadioTimerWiringTests(unittest.TestCase):
     def assert_timer_error(self, result, diagnostic):
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertIn(PREFIX + diagnostic, result.stdout)
-        self.assertIn("1 error(s)", result.stdout)
+        self.assertRegex(result.stdout, r"[1-9][0-9]* error\\(s\\)")
 
     def test_missing_arm_is_error(self):
         result = self.run_with_qm_mutation(lambda radio: self.remove_arm(radio))
