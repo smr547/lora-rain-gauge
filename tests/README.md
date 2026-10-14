@@ -14,3 +14,6 @@ Test evidence supports verification of system requirements and ultimately demons
 
 ## Status
 Initial. The Version 1 verification approach will be derived from the requirements.
+
+## Deferred proposals
+- [Rain gauge soak-test strategy](rain-gauge-soak-test-strategy.md)
