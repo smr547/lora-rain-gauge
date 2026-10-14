@@ -7,7 +7,9 @@ The custom PCB will use ESP32 and SX1276 (915 MHz) modules, firmware-based bucke
 The small plastic enclosure may fit beneath the Davis funnel or beneath the gauge base. Solar panel and bucket cables are at most 10–30 cm, with corrosion-resistant weatherproof terminations. Start with an internal antenna, retain an external option. Existing prototype operation for three days without sunlight is the autonomy baseline.
 
 Reference designs:
-- https://github.com/Xinyuan-LilyGO/LilyGo-LoRa-Series
-- https://github.com/adafruit/Adafruit-bq25185-with-3.3V-Buck-PCB
+- [LilyGO LoRa Series](https://github.com/Xinyuan-LilyGO/LilyGo-LoRa-Series)
+- [Adafruit BQ25185/3.3 V Buck PCB](https://github.com/adafruit/Adafruit-bq25185-with-3.3V-Buck-PCB)
 
-Firmware reference: https://github.com/smr547/lora_experiments branch e1-rain-gauge-v3. QP firmware remains a separate development stream. Confirm exact reference design revisions, power behavior, wake reliability, environmental suitability and antenna performance before schematic release.
+Firmware reference: [lora_experiments](https://github.com/smr547/lora_experiments) branch e1-rain-gauge-v3. QP firmware remains a separate development stream. Confirm exact reference design revisions, power behavior, wake reliability, environmental suitability and antenna performance before schematic release.
+
+See [User and technical requirements](requirements.md) and [Design decisions](design-decisions.md). Stakeholder requirements are awaiting review by Jim and Liz.
