@@ -13,6 +13,9 @@ Recorded 2026-10-14.
 9. Use short (10–30 cm maximum) corrosion-resistant weatherproof solar and bucket connections.
 10. Investigate white paint on the black polycarbonate collector for thermal performance, subject to compatibility testing.
 
+## User requirements
+See [User Requirements](requirements.md#user-requirements), pending review by Jim and Liz. The hardware choices here are means of satisfying those system-level needs.
+
 ## Open choices
 - Exact ESP32 and LoRa module part numbers, GPIO map and wake timing.
 - Battery capacity, charger current, thermal protection, ADC circuit, regulator and power selection links.
@@ -29,7 +32,7 @@ Recorded 2026-10-14.
 - Do not modify the software branches as part of the hardware baseline.
 
 ## Reference designs
-- LilyGO LoRa Series: https://github.com/Xinyuan-LilyGO/LilyGo-LoRa-Series
-- Adafruit BQ25185/3.3 V Buck: https://github.com/adafruit/Adafruit-bq25185-with-3.3V-Buck-PCB
+- LilyGO LoRa Series: [LilyGO LoRa Series](https://github.com/Xinyuan-LilyGO/LilyGo-LoRa-Series)
+- Adafruit BQ25185/3.3 V Buck: [Adafruit BQ25185/3.3 V Buck PCB](https://github.com/adafruit/Adafruit-bq25185-with-3.3V-Buck-PCB)
 
 Confirm exact upstream schematic revisions and licenses before importing or adapting their designs.
