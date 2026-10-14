@@ -17,3 +17,6 @@ The protocol is the stable seam between sensor spokes and the base-station hub a
 
 ## Status
 Version 1 will initially support the rain-gauge use case while providing a clean path for additional message types.
+
+## Deferred proposals
+- [Proposed tipping-bucket diagnostics](tip-diagnostics-proposal.md)
